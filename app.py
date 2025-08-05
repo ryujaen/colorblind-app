@@ -18,7 +18,8 @@ if know_type == "아니요":
 else:
     color_type = st.selectbox(
         "색각 이상 유형 선택",
-        ["Protanopia (적색맹)", "Deuteranopia (녹색맹)", "Tritanopia (청색맹)"]
+        ["Protanopia (적색맹)", "Deuteranopia (녹색맹)", "Tritanopia (청색맹)"],
+        key="color_type_select"
     )
 
 uploaded_file = st.file_uploader("이미지 업로드", type=["jpg", "png", "jpeg"])
