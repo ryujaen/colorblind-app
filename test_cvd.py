@@ -10,8 +10,8 @@ def run_color_vision_test():
     st.markdown("1️⃣ 아래 이미지에서 어떤 숫자가 보이나요?")
     img1 = Image.open("data/ishihara_images/plate_5.png")
     st.image(img1, width=200)
-    ans1 = st.radio("숫자 선택", ["12", "8", "못 보겠음"], key="q1")
-    if ans1 == "12":
+    ans1 = st.radio("숫자 선택", ["5", "12", "8", "못 보겠음"], key="q1")
+    if ans1 == "5":
         score += 1
 
     # 2번 질문
