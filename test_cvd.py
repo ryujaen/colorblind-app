@@ -16,8 +16,9 @@ def _acc(votes, delta):
 def _infer(votes):
     ordered = sorted(votes.items(), key=lambda x: x[1], reverse=True)
     top, second = ordered[0], ordered[1]
-    ctype = top[0]                         # 'normal' | 'protan' | 'deutan' | 'tritan'
+    ctype = top[0] # 'normal' | 'protan' | 'deutan' | 'tritan'
     gap = top[1] - second[1]
+
     # 심도 간단 규칙 (갭 기반)
     if ctype == "normal":
         severity = 0
@@ -25,13 +26,13 @@ def _infer(votes):
         if   gap >= 4: severity = 85
         elif gap >= 3: severity = 65
         elif gap >= 2: severity = 45
-        else:          severity = 25
+        else: severity = 25
     # 앱 내부 키로 변환
     cvd_key = {"protan":"protanomaly", "deutan":"deuteranomaly", "tritan":"tritanomaly", "normal":"normal"}[ctype]
     return cvd_key, severity, ordered
 
 def _order_adaptive(plates, votes):
-    base_ids = {"P12","P74","P26"}              # 공통 3문항
+    base_ids = {"P01","P02","P12"}              # 공통 3문항
     base = [p for p in plates if p["id"] in base_ids]
     rest = [p for p in plates if p["id"] not in base_ids]
     if not votes or max(votes, key=votes.get) == "normal":
