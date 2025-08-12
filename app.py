@@ -25,7 +25,7 @@ else:
 
 # 이미지 입력 방식 선택
 st.write("📤 이미지를 어떻게 불러올까요?")
-input_method = st.radio("이미지 선택 방식", ["파일 업로드", "카메라로 사진 찍기"])
+input_method = st.radio("이미지 선택 방식", ["파일 업로드"])
 
 uploaded_file = None
 camera_photo = None
@@ -36,12 +36,12 @@ if input_method == "파일 업로드":
     uploaded_file = st.file_uploader("이미지 업로드", type=["jpg", "png", "jpeg"])
     if uploaded_file:
         image = Image.open(uploaded_file).convert("RGB")
-
+'''
 elif input_method == "카메라로 사진 찍기":
     camera_photo = st.camera_input("카메라에서 프레임이 보이면 캡처 버튼을 눌러주세요.")
     if camera_photo:
         image = Image.open(camera_photo).convert("RGB")
-
+'''
 # 이미지가 준비되었으면 처리
 if image is not None:
     st.subheader("🖼 원본 이미지")
@@ -57,3 +57,5 @@ if image is not None:
 
     st.subheader("🔧 보정된 이미지")
     st.image(filtered_rgb, use_column_width=True)
+
+st.info("현재 웹 배포 환경에서는 카메라 기능이 제한되어 이미지 업로드만 지원됩니다.")
