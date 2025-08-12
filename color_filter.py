@@ -121,7 +121,7 @@ def apply_colorblind_filter(img_bgr, color_type):
 
     # RGB -> BGR
     out_bgr = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
-    return _clip_uint8(out_bgr)
+    return _clip_uint8(out_rgb)
 
 def simulate_cvd_rgb(img_rgb: np.ndarray, cvd_type: str, severity: int = 100) -> np.ndarray:
     """
@@ -140,3 +140,5 @@ def simulate_cvd_rgb(img_rgb: np.ndarray, cvd_type: str, severity: int = 100) ->
     out = cs.cspace_convert(arr, "sRGB1", spec)
     out = np.clip(out, 0, 1)
     return (out * 255).astype(np.uint8)
+
+
