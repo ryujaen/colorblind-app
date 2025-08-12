@@ -82,6 +82,9 @@ if sim_on:
 
     # 원본/보정 각각 시뮬레이션
     orig_rgb = np.array(image.convert("RGB"))
+
+    filtered_rgb = cv2.cvtColor(filtered_rgb, cv2.COLOR_BGR2RGB)
+
     orig_sim = simulate_cvd_rgb(orig_rgb, cvd_key, severity=severity)
     filt_sim = simulate_cvd_rgb(filtered_rgb, cvd_key, severity=severity)
 
