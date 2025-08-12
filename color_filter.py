@@ -122,3 +122,21 @@ def apply_colorblind_filter(img_bgr, color_type):
     # RGB -> BGR
     out_bgr = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
     return _clip_uint8(out_bgr)
+
+def simulate_cvd_rgb(img_rgb: np.ndarray, cvd_type: str, severity: int = 100) -> np.ndarray:
+    """
+    img_rgb: uint8 RGB 이미지
+    cvd_type: 'protanomaly' | 'deuteranomaly' | 'tritanomaly'
+    severity: 0~100 (100이 완전한 -opia에 가까움)
+    """
+    try:
+        import colorspacious as cs
+    except ImportError:
+        # 라이브러리 미설치 시 원본 반환
+        return img_rgb
+
+    arr = img_rgb.astype(np.float32) / 255.0
+    spec = {"name": "sRGB1+CVD", "cvd_type": cvd_type, "severity": severity}
+    out = cs.cspace_convert(arr, "sRGB1", spec)
+    out = np.clip(out, 0, 1)
+    return (out * 255).astype(np.uint8)

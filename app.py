@@ -3,8 +3,9 @@ from PIL import Image
 import numpy as np
 import cv2
 import test_cvd
-from color_filter import apply_colorblind_filter
 
+from color_filter import apply_colorblind_filter
+from color_filter import simulate_cvd_rgb  # ← 방금 만든 함수
 
 st.set_page_config(page_title="색각이상자 색상 보정 앱")
 st.title("🎨 색각이상자 색상 보정 앱")
@@ -59,3 +60,35 @@ if image is not None:
     st.image(filtered_rgb, use_column_width=True)
 
 st.info("현재 웹 배포 환경에서는 카메라 기능이 제한되어 이미지 업로드만 지원됩니다.")
+
+
+st.markdown("### 👀 색각 이상 시뮬레이션 보기")
+sim_on = st.checkbox("색각 이상자의 시선에서 보기 (원본/보정 모두)")
+
+if sim_on:
+    sim_type = st.selectbox(
+        "시뮬레이션 유형",
+        ["Protanopia (protanomaly)", "Deuteranopia (deuteranomaly)", "Tritanopia (tritanomaly)"]
+    )
+    severity = st.slider("시뮬레이션 강도(severity)", 0, 100, 100, 5)
+
+    # 문자열 매핑
+    map_key = {
+        "Protanopia (protanomaly)": "protanomaly",
+        "Deuteranopia (deuteranomaly)": "deuteranomaly",
+        "Tritanopia (tritanomaly)": "tritanomaly",
+    }
+    cvd_key = map_key[sim_type]
+
+    # 원본/보정 각각 시뮬레이션
+    orig_rgb = np.array(image.convert("RGB"))
+    orig_sim = simulate_cvd_rgb(orig_rgb, cvd_key, severity=severity)
+    filt_sim = simulate_cvd_rgb(filtered_rgb, cvd_key, severity=severity)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.caption("원본 (시뮬레이션)")
+        st.image(orig_sim, use_container_width=True)
+    with c2:
+        st.caption("보정본 (시뮬레이션)")
+        st.image(filt_sim, use_container_width=True)
