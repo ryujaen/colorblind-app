@@ -12,18 +12,28 @@ st.title("🎨 색각이상자 색상 보정 앱")
 st.write("사진을 업로드하거나 색각 이상 유형을 선택하면, 변환된 이미지를 보여줍니다.")
 
 # 색각 이상 유형 질문
-know_type = st.selectbox("색각 이상 유형을 알고 계신가요?", ["예", "아니요"])
-
 if know_type == "아니요":
-    user_type = test_cvd.run_color_vision_test()
-    color_type = user_type
+    cvd_key, auto_sev = test_cvd.run_color_vision_test()  # cvd_key: 'protanomaly' | 'deuteranomaly' | 'tritanomaly' | 'normal'
+    # 테스트가 끝난 경우에만 기본값 자동 설정
+    if cvd_key:
+        st.session_state["cvd_type"] = cvd_key
+        st.session_state["cvd_severity"] = auto_sev
+        # 필터용 드롭다운(한국어 라벨) 기본 선택을 매핑
+        label_map = {
+            "protanomaly": "Protanopia (적색맹)",
+            "deuteranomaly": "Deuteranopia (녹색맹)",
+            "tritanomaly": "Tritanopia (청색맹)",
+            "normal": "Deuteranopia (녹색맹)"  # 기본값 아무거나; normal이면 필터 안씀
+        }
+        color_type = label_map.get(cvd_key, "Deuteranopia (녹색맹)")
+    else:
+        color_type = st.session_state.get("color_type_select", "Deuteranopia (녹색맹)")
 else:
     color_type = st.selectbox(
         "색각 이상 유형 선택",
         ["Protanopia (적색맹)", "Deuteranopia (녹색맹)", "Tritanopia (청색맹)"],
         key="color_type_select"
     )
-
 # 이미지 입력 방식 선택
 st.write("📤 이미지를 어떻게 불러올까요?")
 input_method = st.radio("이미지 선택 방식", ["파일 업로드"])

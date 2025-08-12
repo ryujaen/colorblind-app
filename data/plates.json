@@ -1,0 +1,56 @@
+[
+  {
+    "id": "P12",
+    "img": "data/ishihara/P12.png",
+    "question": "숫자가 보이나요?",
+    "choices": ["12", "보이지 않음", "다르게 보임"],
+    "weights": {
+      "12": {"normal": 2},
+      "보이지 않음": {"protan": 2, "deutan": 2},
+      "다르게 보임": {"tritan": 2}
+    }
+  },
+  {
+    "id": "P74",
+    "img": "data/ishihara/P74.png",
+    "question": "숫자를 선택하세요",
+    "choices": ["74","21","보이지 않음"],
+    "weights": {
+      "74": {"normal": 2},
+      "21": {"deutan": 2, "protan": 1},
+      "보이지 않음": {"tritan": 1}
+    }
+  },
+  {
+    "id": "P26",
+    "img": "data/ishihara/P26.png",
+    "question": "숫자가 보이나요?",
+    "choices": ["26","보이지 않음","다르게 보임"],
+    "weights": {
+      "26": {"normal": 2},
+      "보이지 않음": {"protan": 1, "deutan": 1},
+      "다르게 보임": {"tritan": 1}
+    }
+  },
+  {
+    "id": "P45",
+    "img": "data/ishihara/P45.png",
+    "question": "숫자를 선택하세요",
+    "choices": ["45","보이지 않음"],
+    "weights": {
+      "45": {"normal": 2},
+      "보이지 않음": {"protan": 1, "deutan": 1}
+    }
+  },
+  {
+    "id": "P29",
+    "img": "data/ishihara/P29.png",
+    "question": "숫자를 선택하세요",
+    "choices": ["29","70","보이지 않음"],
+    "weights": {
+      "29": {"normal": 2},
+      "70": {"protan": 2, "deutan": 1},
+      "보이지 않음": {"tritan": 1}
+    }
+  }
+]

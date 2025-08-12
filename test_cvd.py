@@ -1,38 +1,76 @@
+# test_cvd.py
+import json
+from pathlib import Path
 import streamlit as st
-from PIL import Image
+
+PLATES_PATH = Path("data/plates.json")
+
+@st.cache_data
+def load_plates():
+    return json.loads(PLATES_PATH.read_text(encoding="utf-8"))
+
+def _acc(votes, delta):
+    for k, v in delta.items():
+        votes[k] = votes.get(k, 0) + v
+
+def _infer(votes):
+    ordered = sorted(votes.items(), key=lambda x: x[1], reverse=True)
+    top, second = ordered[0], ordered[1]
+    ctype = top[0]                         # 'normal' | 'protan' | 'deutan' | 'tritan'
+    gap = top[1] - second[1]
+    # 심도 간단 규칙 (갭 기반)
+    if ctype == "normal":
+        severity = 0
+    else:
+        if   gap >= 4: severity = 85
+        elif gap >= 3: severity = 65
+        elif gap >= 2: severity = 45
+        else:          severity = 25
+    # 앱 내부 키로 변환
+    cvd_key = {"protan":"protanomaly", "deutan":"deuteranomaly", "tritan":"tritanomaly", "normal":"normal"}[ctype]
+    return cvd_key, severity, ordered
+
+def _order_adaptive(plates, votes):
+    base_ids = {"P12","P74","P26"}              # 공통 3문항
+    base = [p for p in plates if p["id"] in base_ids]
+    rest = [p for p in plates if p["id"] not in base_ids]
+    if not votes or max(votes, key=votes.get) == "normal":
+        return base + rest
+    top = max(votes, key=votes.get)
+    # 가중치에 top이 언급되는 문항 우선
+    def targets(p):
+        for w in p["weights"].values():
+            if top in w: return True
+        return False
+    pri = [p for p in rest if targets(p)]
+    oth = [p for p in rest if p not in pri]
+    return base + pri + oth
 
 def run_color_vision_test():
-    st.subheader("🧠 간단한 색각 이상 테스트")
+    plates = load_plates()
+    st.subheader("👁️ 색각 간이 검사 (6~8문항)")
+    st.caption("밝은 화면에서 50~70cm 거리 권장")
 
-    score = 0
+    st.session_state.setdefault("tc_votes", {"normal":0,"protan":0,"deutan":0,"tritan":0})
 
-    # 1번 질문
-    st.markdown("1️⃣ 아래 이미지에서 어떤 숫자가 보이나요?")
-    img1 = Image.open("data/ishihara_images/plate_5.png")
-    st.image(img1, width=200)
-    ans1 = st.radio("숫자 선택", ["5", "12", "8", "못 보겠음"], key="q1")
-    if ans1 == "5":
-        score += 1
+    order = _order_adaptive(plates, st.session_state["tc_votes"])
 
-    # 2번 질문
-    st.markdown("2️⃣ 다음 중 비슷해 보이는 색 조합을 선택하세요.")
-    ans2 = st.radio("선택", [
-        "빨강-초록", "파랑-노랑", "보라-검정"
-    ], key="q2")
-    if ans2 == "빨강-초록":
-        score += 1
+    asked = 0
+    for p in order:
+        if asked >= 8: break
+        st.image(p["img"], use_container_width=True)
+        choice = st.radio(p["question"], p["choices"], key=f"tc_ans_{p['id']}")
+        if choice:
+            _acc(st.session_state["tc_votes"], p["weights"].get(choice, {}))
+            asked += 1
+        st.divider()
 
-    # 결과
-    st.markdown("---")
-    if score == 2:
-        st.success("정상 또는 약한 색각 이상 가능성 있음")
-        return "normal"
-    elif ans2 == "빨강-초록":
-        st.warning("Protanopia 또는 Deuteranopia 가능성")
-        return "red-green"
-    elif ans2 == "파랑-노랑":
-        st.warning("Tritanopia 가능성")
-        return "tritan"
-    else:
-        st.info("정확한 검사가 필요합니다.")
-        return "unknown"
+    if st.button("결과 보기", key="tc_result_btn"):
+        cvd_key, severity, ordered = _infer(st.session_state["tc_votes"])
+        if cvd_key == "normal":
+            st.success("정상 시각으로 추정됩니다.")
+        else:
+            st.success(f"예상 유형: **{cvd_key}**, 심도: **{severity}**")
+        st.json({"votes": st.session_state["tc_votes"], "ranking": ordered})
+        return cvd_key, severity
+    return None, None
