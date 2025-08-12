@@ -11,7 +11,7 @@ st.set_page_config(page_title="색각이상자 색상 보정 앱")
 st.title("🎨 색각이상자 색상 보정 앱")
 st.write("사진을 업로드하거나 색각 이상 유형을 선택하면, 변환된 이미지를 보여줍니다.")
 
-know_type = st.selectbox("색각 이상 유형을 알고 계신가요?", ["예", "아니요"])
+know_type = st.selectbox("색각 이상 유형을 알고 계신가요?", ["예", "아니요"], key="know_type_select")
 
 # 색각 이상 유형 질문
 if know_type == "아니요":
