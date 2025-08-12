@@ -136,6 +136,7 @@ def simulate_cvd_rgb(img_rgb: np.ndarray, cvd_type: str, severity: int = 100) ->
         return img_rgb
 
     arr = img_rgb.astype(np.float32) / 255.0
+    severity = int(np.clip(severity, 0, 100))
     spec = {"name": "sRGB1+CVD", "cvd_type": cvd_type, "severity": severity}
     out = cs.cspace_convert(arr, "sRGB1", spec)
     out = np.clip(out, 0, 1)
