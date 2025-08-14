@@ -60,7 +60,7 @@ def run_color_vision_test():
     for p in order:
         if asked >= 8: break
         st.image(p["img"], use_container_width=True)
-        choice = st.radio(p["question"], p["choices"], key=f"tc_ans_{p['id']}, index=None")
+        choice = st.radio(p["question"], p["choices"], index=None, key=f"tc_ans_{p['id']}")
         if choice:
             _acc(st.session_state["tc_votes"], p["weights"].get(choice, {}))
             asked += 1
