@@ -4,3 +4,4 @@ opencv-python-headless
 Pillow
 streamlit-webrtc
 colorspacious==1.1.2
+streamlit>=1.30
