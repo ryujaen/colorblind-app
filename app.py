@@ -71,7 +71,6 @@ if image is not None:
     st.subheader("🔧 보정된 이미지")
     st.image(filtered_rgb, use_column_width=True)
 
-st.info("현재 웹 배포 환경에서는 카메라 기능이 제한되어 이미지 업로드만 지원됩니다.")
 
 
 st.markdown("### 👀 색각 이상 시뮬레이션 보기")
