@@ -72,6 +72,5 @@ def run_color_vision_test():
             st.success("정상 시각으로 추정됩니다.")
         else:
             st.success(f"예상 유형: **{cvd_key}**, 심도: **{severity}**")
-        st.json({"votes": st.session_state["tc_votes"], "ranking": ordered})
         return cvd_key, severity
     return None, None
