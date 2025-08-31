@@ -58,12 +58,18 @@ def run_color_vision_test():
 
     asked = 0
     for p in order:
-        if asked >= 8: break
+        if asked >= 8:
+            break
         st.image(p["img"], use_container_width=True)
-        choice = st.radio(p["question"], p["choices"], index=None, key=f"tc_ans_{p['id']}")
-        if choice:
+
+        # 기본값 없애기 위해 "선택 안 함" 추가
+        choices = ["선택 안 함"] + p["choices"]
+        choice = st.radio(p["question"], choices, index=0, key=f"tc_ans_{p['id']}")
+
+        if choice != "선택 안 함":
             _acc(st.session_state["tc_votes"], p["weights"].get(choice, {}))
             asked += 1
+
         st.divider()
 
     if st.button("결과 보기", key="tc_result_btn"):
