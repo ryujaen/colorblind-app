@@ -52,7 +52,19 @@ def run_color_vision_test():
     st.subheader("👁️ 색각 간이 검사 (6~8문항)")
     st.caption("밝은 화면에서 50~70cm 거리 권장")
 
+    # 초기 세션 키 준비
     st.session_state.setdefault("tc_votes", {"normal":0,"protan":0,"deutan":0,"tritan":0})
+    st.session_state.setdefault("tc_run", 0)  # 위젯 키에 섞을 런 번호
+
+    # ▶️ 초기화 버튼
+    if st.button("⬅️ 처음부터 다시"):
+        # 기존 답변 위젯 상태/투표 모두 지우기
+        for k in list(st.session_state.keys()):
+            if k.startswith("tc_ans_"):
+                del st.session_state[k]
+        st.session_state["tc_votes"] = {"normal":0,"protan":0,"deutan":0,"tritan":0}
+        st.session_state["tc_run"] += 1
+        st.experimental_rerun()
 
     order = _order_adaptive(plates, st.session_state["tc_votes"])
 
@@ -62,25 +74,26 @@ def run_color_vision_test():
             break
         st.image(p["img"], use_container_width=True)
 
-        # 기본값 없애기 위해 "선택 안 함" 추가
-        choices = p["choices"]
-        choice = st.radio(
-            p["question"],
-            choices,
-            index=None,
-            key=f"tc_ans_{p['id']}")
+        # index=None: 기본 미선택
+        try:
+            choice = st.radio(
+                p["question"],
+                p["choices"],           # '선택 안 함' 제거
+                index=None,             # ✅ 미선택 시작
+                key=f"tc_ans_{st.session_state['tc_run']}_{p['id']}"
+            )
+        except TypeError:
+            # 구버전 Streamlit 호환(라디오는 None 미지원일 때)
+            choice = st.selectbox(
+                p["question"],
+                p["choices"],
+                index=None,
+                placeholder="선택해 주세요",
+                key=f"tc_ans_{st.session_state['tc_run']}_{p['id']}"
+            )
 
         if choice is not None:
             _acc(st.session_state["tc_votes"], p["weights"].get(choice, {}))
             asked += 1
 
         st.divider()
-
-    if st.button("결과 보기", key="tc_result_btn"):
-        cvd_key, severity, ordered = _infer(st.session_state["tc_votes"])
-        if cvd_key == "normal":
-            st.success("정상 시각으로 추정됩니다.")
-        else:
-            st.success(f"예상 유형: **{cvd_key}**, 심도: **{severity}**")
-        return cvd_key, severity
-    return None, None
