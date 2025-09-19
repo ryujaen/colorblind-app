@@ -1,8 +1,53 @@
 # test_cvd.py
 import json
+import re
 from pathlib import Path
 import streamlit as st
 
+# ---------- 입력 매핑 유틸 ----------
+def _canon(s: str) -> str:
+    s = (s or "").strip().lower()
+    return re.sub(r"\s+", "", s)
+
+def _digits(s: str) -> str | None:
+    m = re.findall(r"\d+", s or "")
+    return "".join(m) if m else None
+
+def map_input_to_choice(choices: list[str], user_text: str) -> str | None:
+    """자유 입력(숫자/텍스트)을 기존 choice 문자열로 매핑"""
+    if not user_text:
+        return None
+
+    t = _canon(user_text)
+
+    # 1) 숫자 매칭 (예: "12", "12번", "12." 등)
+    d = _digits(t)
+    if d:
+        for c in choices:
+            cd = _digits(c)
+            if cd and cd == d:
+                return c
+
+    # 2) '안 보임' 계열
+    if any(kw in t for kw in ["안보임", "안보여", "없음", "없다", "none", "no", "보이지않음", "x"]):
+        for c in choices:
+            if _canon(c).startswith("안보임") or "not" in _canon(c):
+                return c
+
+    # 3) '다르게 보임' 계열
+    if any(kw in t for kw in ["다르게", "모름", "?", "other", "unknown"]):
+        for c in choices:
+            if "다르게" in c or "other" in _canon(c):
+                return c
+
+    # 4) 완전 일치
+    for c in choices:
+        if _canon(c) == t:
+            return c
+
+    return None
+
+# ---------- 데이터/규칙 ----------
 PLATES_PATH = Path("data/plates.json")
 
 @st.cache_data
@@ -16,7 +61,7 @@ def _acc(votes, delta):
 def _infer(votes):
     ordered = sorted(votes.items(), key=lambda x: x[1], reverse=True)
     top, second = ordered[0], ordered[1]
-    ctype = top[0] # 'normal' | 'protan' | 'deutan' | 'tritan'
+    ctype = top[0]  # 'normal' | 'protan' | 'deutan' | 'tritan'
     gap = top[1] - second[1]
 
     # 심도 간단 규칙 (갭 기반)
@@ -27,42 +72,51 @@ def _infer(votes):
         elif gap >= 3: severity = 65
         elif gap >= 2: severity = 45
         else: severity = 25
+
     # 앱 내부 키로 변환
-    cvd_key = {"protan":"protanomaly", "deutan":"deuteranomaly", "tritan":"tritanomaly", "normal":"normal"}[ctype]
+    cvd_key = {
+        "protan":  "protanomaly",
+        "deutan":  "deuteranomaly",
+        "tritan":  "tritanomaly",
+        "normal":  "normal",
+    }[ctype]
     return cvd_key, severity, ordered
 
 def _order_adaptive(plates, votes):
-    base_ids = {"P01","P02","P12"}              # 공통 3문항
+    base_ids = {"P01", "P02", "P12"}  # 공통 3문항
     base = [p for p in plates if p["id"] in base_ids]
     rest = [p for p in plates if p["id"] not in base_ids]
     if not votes or max(votes, key=votes.get) == "normal":
         return base + rest
     top = max(votes, key=votes.get)
+
     # 가중치에 top이 언급되는 문항 우선
     def targets(p):
         for w in p["weights"].values():
-            if top in w: return True
+            if top in w:
+                return True
         return False
+
     pri = [p for p in rest if targets(p)]
     oth = [p for p in rest if p not in pri]
     return base + pri + oth
 
+# ---------- 메인: 자유 입력형 검사 ----------
 def run_color_vision_test():
     plates = load_plates()
     st.subheader("👁️ 색각 간이 검사 (6~8문항)")
     st.caption("밝은 화면에서 50~70cm 거리 권장")
 
-    # 초기 세션 키 준비
-    st.session_state.setdefault("tc_votes", {"normal":0,"protan":0,"deutan":0,"tritan":0})
-    st.session_state.setdefault("tc_run", 0)  # 위젯 키에 섞을 런 번호
+    # 세션 초기값
+    st.session_state.setdefault("tc_votes", {"normal": 0, "protan": 0, "deutan": 0, "tritan": 0})
+    st.session_state.setdefault("tc_run", 0)  # 위젯 키 변경용 시퀀스
 
-    # ▶️ 초기화 버튼
+    # 초기화 버튼
     if st.button("⬅️ 처음부터 다시"):
-        # 기존 답변 위젯 상태/투표 모두 지우기
         for k in list(st.session_state.keys()):
-            if k.startswith("tc_ans_"):
+            if k.startswith("tc_free_"):
                 del st.session_state[k]
-        st.session_state["tc_votes"] = {"normal":0,"protan":0,"deutan":0,"tritan":0}
+        st.session_state["tc_votes"] = {"normal": 0, "protan": 0, "deutan": 0, "tritan": 0}
         st.session_state["tc_run"] += 1
         st.experimental_rerun()
 
@@ -72,28 +126,35 @@ def run_color_vision_test():
     for p in order:
         if asked >= 8:
             break
+
         st.image(p["img"], use_container_width=True)
 
-        # index=None: 기본 미선택
-        try:
-            choice = st.radio(
-                p["question"],
-                p["choices"],           # '선택 안 함' 제거
-                index=None,             # ✅ 미선택 시작
-                key=f"tc_ans_{st.session_state['tc_run']}_{p['id']}"
-            )
-        except TypeError:
-            # 구버전 Streamlit 호환(라디오는 None 미지원일 때)
-            choice = st.selectbox(
-                p["question"],
-                p["choices"],
-                index=None,
-                placeholder="선택해 주세요",
-                key=f"tc_ans_{st.session_state['tc_run']}_{p['id']}"
-            )
+        # 텍스트 직접 입력
+        user_ans = st.text_input(
+            label=p["question"],
+            placeholder="예: 12  /  안 보임  /  다르게 보임",
+            key=f"tc_free_{st.session_state['tc_run']}_{p['id']}",
+        )
 
-        if choice is not None:
-            _acc(st.session_state["tc_votes"], p["weights"].get(choice, {}))
-            asked += 1
+        choice = map_input_to_choice(p["choices"], user_ans)
+
+        if user_ans:  # 뭔가 입력했을 때만 처리
+            if choice is None:
+                st.caption("⚠️ 인식되지 않은 입력이에요. 예: 12 / 안 보임 / 다르게 보임")
+            else:
+                _acc(st.session_state["tc_votes"], p["weights"].get(choice, {}))
+                asked += 1
 
         st.divider()
+
+    # 결과 버튼
+    if st.button("결과 보기", key="tc_result_btn"):
+        cvd_key, severity, ordered = _infer(st.session_state["tc_votes"])
+        if cvd_key == "normal":
+            st.success("정상 시각으로 추정됩니다.")
+        else:
+            st.success(f"예상 유형: **{cvd_key}**, 심도: **{severity}**")
+        return cvd_key, severity
+
+    # 항상 튜플 반환(호출부 언패킹 에러 방지)
+    return (None, None)

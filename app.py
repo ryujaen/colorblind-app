@@ -17,7 +17,10 @@ know_type = st.selectbox("색각 이상 유형을 알고 계신가요?", ["예",
 
 # 색각 이상 유형 질문
 if know_type == "아니요":
-    cvd_key, auto_sev = test_cvd.run_color_vision_test()  # cvd_key: 'protanomaly' | 'deuteranomaly' | 'tritanomaly' | 'normal'
+    res = test_cvd.run_color_vision_test()
+    cvd_key, auto_sev = (res or (None, None))
+   
+    
     # 테스트가 끝난 경우에만 기본값 자동 설정
     if cvd_key:
         st.session_state["cvd_type"] = cvd_key
