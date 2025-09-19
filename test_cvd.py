@@ -20,7 +20,7 @@ def map_input_to_choice(choices: list[str], user_text: str) -> str | None:
 
     t = _canon(user_text)
 
-    # 1) 숫자 매칭 (예: "12", "12번", "12." 등)
+    # 1) 숫자 매칭
     d = _digits(t)
     if d:
         for c in choices:
@@ -47,6 +47,7 @@ def map_input_to_choice(choices: list[str], user_text: str) -> str | None:
 
     return None
 
+
 # ---------- 데이터/규칙 ----------
 PLATES_PATH = Path("data/plates.json")
 
@@ -61,10 +62,9 @@ def _acc(votes, delta):
 def _infer(votes):
     ordered = sorted(votes.items(), key=lambda x: x[1], reverse=True)
     top, second = ordered[0], ordered[1]
-    ctype = top[0]  # 'normal' | 'protan' | 'deutan' | 'tritan'
+    ctype = top[0]
     gap = top[1] - second[1]
 
-    # 심도 간단 규칙 (갭 기반)
     if ctype == "normal":
         severity = 0
     else:
@@ -73,7 +73,6 @@ def _infer(votes):
         elif gap >= 2: severity = 45
         else: severity = 25
 
-    # 앱 내부 키로 변환
     cvd_key = {
         "protan":  "protanomaly",
         "deutan":  "deuteranomaly",
@@ -83,14 +82,13 @@ def _infer(votes):
     return cvd_key, severity, ordered
 
 def _order_adaptive(plates, votes):
-    base_ids = {"P01", "P02", "P12"}  # 공통 3문항
+    base_ids = {"P01", "P02", "P12"}
     base = [p for p in plates if p["id"] in base_ids]
     rest = [p for p in plates if p["id"] not in base_ids]
     if not votes or max(votes, key=votes.get) == "normal":
         return base + rest
     top = max(votes, key=votes.get)
 
-    # 가중치에 top이 언급되는 문항 우선
     def targets(p):
         for w in p["weights"].values():
             if top in w:
@@ -101,17 +99,16 @@ def _order_adaptive(plates, votes):
     oth = [p for p in rest if p not in pri]
     return base + pri + oth
 
-# ---------- 메인: 자유 입력형 검사 ----------
+
+# ---------- 메인 ----------
 def run_color_vision_test():
     plates = load_plates()
     st.subheader("👁️ 색각 간이 검사 (6~8문항)")
     st.caption("밝은 화면에서 50~70cm 거리 권장")
 
-    # 세션 초기값
     st.session_state.setdefault("tc_votes", {"normal": 0, "protan": 0, "deutan": 0, "tritan": 0})
-    st.session_state.setdefault("tc_run", 0)  # 위젯 키 변경용 시퀀스
+    st.session_state.setdefault("tc_run", 0)
 
-    # 초기화 버튼
     if st.button("⬅️ 처음부터 다시"):
         for k in list(st.session_state.keys()):
             if k.startswith("tc_free_"):
@@ -129,7 +126,6 @@ def run_color_vision_test():
 
         st.image(p["img"], use_container_width=True)
 
-        # 텍스트 직접 입력
         user_ans = st.text_input(
             label=p["question"],
             placeholder="예: 12  /  안 보임  /  다르게 보임",
@@ -138,7 +134,7 @@ def run_color_vision_test():
 
         choice = map_input_to_choice(p["choices"], user_ans)
 
-        if user_ans:  # 뭔가 입력했을 때만 처리
+        if user_ans:
             if choice is None:
                 st.caption("⚠️ 인식되지 않은 입력이에요. 예: 12 / 안 보임 / 다르게 보임")
             else:
@@ -147,7 +143,6 @@ def run_color_vision_test():
 
         st.divider()
 
-    # 결과 버튼
     if st.button("결과 보기", key="tc_result_btn"):
         cvd_key, severity, ordered = _infer(st.session_state["tc_votes"])
         if cvd_key == "normal":
@@ -156,5 +151,4 @@ def run_color_vision_test():
             st.success(f"예상 유형: **{cvd_key}**, 심도: **{severity}**")
         return cvd_key, severity
 
-    # 항상 튜플 반환(호출부 언패킹 에러 방지)
     return (None, None)
