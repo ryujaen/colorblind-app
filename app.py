@@ -7,6 +7,8 @@ import test_cvd
 from color_filter import apply_colorblind_filter
 from color_filter import simulate_cvd_rgb  # ← 방금 만든 함수
 
+st.set_page_config(page_title="색각 검사", page_icon="👁️", layout="centered", initial_sidebar_state="collapsed")
+
 st.set_page_config(page_title="색각이상자 색상 보정 앱")
 st.title("🎨 색각이상자 색상 보정 앱")
 st.write("사진을 업로드하거나 색각 이상 유형을 선택하면, 변환된 이미지를 보여줍니다.")
