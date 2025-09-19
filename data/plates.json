@@ -1,7 +1,7 @@
 ﻿[
   {
     "id": "P01",
-    "img": "data/ishihara/plate01_12.png",
+    "img": "data/plates_circle/plate01_12.png",
     "question": "臾댁뒯 ?レ옄媛 蹂댁씠?섏슂?",
     "choices": ["12", "??蹂댁엫", "?ㅻⅤ寃?蹂댁엫"],
     "weights": {
@@ -11,7 +11,7 @@
   },
   {
     "id": "P12",
-    "img": "data/ishihara/plate12_97.png",
+    "img": "data/plates_circle/plate12_97.png",
     "question": "臾댁뒯 ?レ옄媛 蹂댁씠?섏슂?",
     "choices": ["97", "??蹂댁엫", "?ㅻⅤ寃?蹂댁엫"],
     "weights": {
@@ -21,7 +21,7 @@
   },
   {
     "id": "P02",
-    "img": "data/ishihara/plate02_8.png",
+    "img": "data/plates_circle/plate02_8.png",
     "question": "臾댁뒯 ?レ옄媛 蹂댁씠?섏슂?",
     "choices": ["8", "3", "??蹂댁엫"],
     "weights": {
@@ -31,7 +31,7 @@
   },
   {
     "id": "P06",
-    "img": "data/ishihara/plate06_5.png",
+    "img": "data/plates_circle/plate06_5.png",
     "question": "臾댁뒯 ?レ옄媛 蹂댁씠?섏슂?",
     "choices": ["5", "2", "??蹂댁엫"],
     "weights": {
@@ -41,7 +41,7 @@
   },
   {
     "id": "P08",
-    "img": "data/ishihara/plate08_15.png",
+    "img": "data/plates_circle/plate08_15.png",
     "question": "臾댁뒯 ?レ옄媛 蹂댁씠?섏슂?",
     "choices": ["15", "17", "??蹂댁엫"],
     "weights": {
@@ -51,7 +51,7 @@
   },
   {
     "id": "P29",
-    "img": "data/ishihara/plate29_29.png",
+    "img": "data/plates_circle/plate29_29.png",
     "question": "臾댁뒯 ?レ옄媛 蹂댁씠?섏슂?",
     "choices": ["29", "70", "??蹂댁엫"],
     "weights": {
@@ -61,7 +61,7 @@
   },
   {
     "id": "P19",
-    "img": "data/ishihara/plate19_2.png",
+    "img": "data/plates_circle/plate19_2.png",
     "question": "臾댁뒯 ?レ옄媛 蹂댁씠?섏슂?",
     "choices": ["??蹂댁엫", "2", "?ㅻⅤ寃?蹂댁엫"],
     "weights": {
@@ -71,7 +71,7 @@
   },
   {
     "id": "PXX",
-    "img": "data/ishihara/plateXX_tritan.png",
+    "img": "data/plates_circle/plateXX_tritan.png",
     "question": "臾댁뒯 ?レ옄媛 蹂댁씠?섏슂?",
     "choices": ["?レ옄 蹂댁엫", "??蹂댁엫"],
     "weights": {
