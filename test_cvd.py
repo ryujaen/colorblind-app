@@ -63,10 +63,14 @@ def run_color_vision_test():
         st.image(p["img"], use_container_width=True)
 
         # 기본값 없애기 위해 "선택 안 함" 추가
-        choices = ["선택 안 함"] + p["choices"]
-        choice = st.radio(p["question"], choices, index=0, key=f"tc_ans_{p['id']}")
+        choices = p["choices"]
+        choice = st.radio(
+            p["question"],
+            choices,
+            index=None,
+            key=f"tc_ans_{p['id']}")
 
-        if choice != "선택 안 함":
+        if choice is not None:
             _acc(st.session_state["tc_votes"], p["weights"].get(choice, {}))
             asked += 1
 
