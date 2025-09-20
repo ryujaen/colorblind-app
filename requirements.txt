@@ -1,7 +1,5 @@
-streamlit
-numpy
-opencv-python-headless
-Pillow
-streamlit-webrtc
-colorspacious==1.1.2
-streamlit>=1.30
+streamlit==1.37.1
+opencv-python-headless==4.10.0.84
+Pillow==10.4.0
+numpy==1.26.4
+
