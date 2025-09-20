@@ -103,12 +103,17 @@ compare = side_by_side(masked_src, masked_dst)
 c1, c2 = st.columns([1, 1], gap="medium")
 with c1:
     st.subheader("원본 (마스크 적용)")
-    st.image(cv_to_pil(masked_src), use_column_width=True)
+    st.image(cv_to_pil(masked_src), use_container_width=True)
 with c2:
     st.subheader("보정 결과 (마스크 적용)")
-    st.image(cv_to_pil(masked_dst), use_column_width=True)
+    st.image(cv_to_pil(masked_dst), use_container_width=True)
 
+# 전/후 비교도 같은 방식으로
 st.subheader("전/후 비교 (가로 병치)")
-st.image(cv_to_pil(compare), use_column_width=True, caption=f"보정 유형: {ctype}")
+c3, c4 = st.columns([1, 1], gap="medium")
+with c3:
+    st.image(cv_to_pil(masked_src), use_container_width=True, caption="원본")
+with c4:
+    st.image(cv_to_pil(masked_dst), use_container_width=True, caption=f"보정 ({ctype})")
 
-st.caption("Tip: 사이드바에서 배경 밝기와 처리 해상도를 조절해보세요.")
+st.caption("Tip: 사이드바에서 처리 해상도를 조절해보세요.")
