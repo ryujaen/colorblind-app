@@ -1,21 +1,12 @@
-# app.py (상단)
+# app.py (헤더 최소본)
+import streamlit as st
+st.set_page_config(page_title="TrueColor", layout="wide")  # ✅ 첫 번째 Streamlit 호출, 딱 1번만!
+
 import numpy as np
 from PIL import Image
-import streamlit as st
 
-# 반드시 첫 Streamlit 호출
-st.set_page_config(page_title="TrueColor", layout="wide", initial_sidebar_state="expanded")
-
-# 아래부터 다른 import/디버그/출력
 from daltonize import correct_image, SUPPORTED_TYPES
 from image_utils import pil_to_cv, cv_to_pil, safe_resize, side_by_side
-# (디버그가 필요하면 set_page_config 다음 줄 이후에)
-# import image_utils as IU
-# st.caption(f"image_utils: {getattr(IU,'__file__','?')}")
-# st.caption(f"has side_by_side: {'side_by_side' in dir(IU)}")
-
-import image_utils as IU
-st.caption(f"side_by_side exists: {'side_by_side' in dir(IU)}")
 
 # image_utils에서 가능한 건 가져오고, 누락된 건 로컬 폴백 정의
 try:
@@ -119,15 +110,14 @@ compare = side_by_side(masked_src, masked_dst)
 # ===== 출력 =====
 c1, c2 = st.columns([1, 1], gap="medium")
 with c1:
-    st.subheader("원본 (마스크 적용)")
+    st.subheader("원본")
     st.image(cv_to_pil(masked_src), use_container_width=True)
 with c2:
-    st.subheader("보정 결과 (마스크 적용)")
+    st.subheader("보정 결과")
     st.image(cv_to_pil(masked_dst), use_container_width=True)
 
-# 전/후 비교 (가로 병치)
 st.subheader("전/후 비교 (가로 병치)")
-c3, c4 = st.columns([1, 1], gap="medium")
+c3, c4 = st.columns([1, 1], gap="medium")   # 위와 동일 간격
 with c3:
     st.image(cv_to_pil(masked_src), use_container_width=True, caption="원본")
 with c4:

@@ -56,39 +56,35 @@ def apply_circle_mask(arr: np.ndarray, bg_gray: int = 200, margin: int = 20) -> 
         out[mask == 255] = arr[mask == 255]
         return out
 
-def side_by_side(left: np.ndarray | Image.Image,
-                 right: np.ndarray | Image.Image,
-                 gap: int = 0,
-                 bg_value: int = 0) -> np.ndarray:
-    """두 이미지를 같은 높이로 맞춰 좌우로 붙임(항상 3채널 BGR)."""
-    L = left if isinstance(left, np.ndarray) else pil_to_cv(left)
-    R = right if isinstance(right, np.ndarray) else pil_to_cv(right)
+def side_by_side(left, right, gap: int = 0, bg_value: int = 0):
+    import numpy as np, cv2
+    from PIL import Image
 
-    # --- 채널 정규화: 항상 3채널 ---
-    if L.ndim == 2:
-        L = cv2.cvtColor(L, cv2.COLOR_GRAY2BGR)
-    if R.ndim == 2:
-        R = cv2.cvtColor(R, cv2.COLOR_GRAY2BGR)
-    if L.shape[2] == 4:
-        L = L[:, :, :3]
-    if R.shape[2] == 4:
-        R = R[:, :, :3]
+    def _to_bgr(a):
+        if isinstance(a, Image.Image):
+            if a.mode in ("RGBA", "LA"):
+                a = a.convert("RGB")
+            a = cv2.cvtColor(np.array(a), cv2.COLOR_RGB2BGR)
+            return a
+        return a
 
-    # --- 높이 맞추기 ---
+    L = _to_bgr(left)
+    R = _to_bgr(right)
+
+    # 항상 3채널 보장
+    if L.ndim == 2: L = cv2.cvtColor(L, cv2.COLOR_GRAY2BGR)
+    if R.ndim == 2: R = cv2.cvtColor(R, cv2.COLOR_GRAY2BGR)
+    if L.shape[2] == 4: L = L[:, :, :3]
+    if R.shape[2] == 4: R = R[:, :, :3]
+
     h = max(L.shape[0], R.shape[0])
-
-    def _resize_h(a: np.ndarray) -> np.ndarray:
-        scale = h / a.shape[0]
-        w = max(1, int(a.shape[1] * scale))
+    def rh(a):
+        s = h / a.shape[0]
+        w = max(1, int(a.shape[1] * s))
         return cv2.resize(a, (w, h), interpolation=cv2.INTER_LANCZOS4)
 
-    Lr, Rr = _resize_h(L), _resize_h(R)
-
-    # --- 출력 캔버스: 세 번째 축은 반드시 3! ---
-    out_w = Lr.shape[1] + gap + Rr.shape[1]
-    out   = np.full((h, out_w, 3), bg_value, dtype=np.uint8)
-
-    # --- 복사 ---
+    Lr, Rr = rh(L), rh(R)
+    out = np.full((h, Lr.shape[1] + gap + Rr.shape[1], 3), bg_value, np.uint8)  # ✅ 채널=3 고정
     out[:, :Lr.shape[1], :] = Lr
     out[:, Lr.shape[1] + gap:, :] = Rr
     return out
