@@ -73,12 +73,15 @@ pil_small = safe_resize(uploaded_img, target_long=max_width)
 # 2) OpenCV 배열로 변환 -> ndarray(BGR)
 cv_small = pil_to_cv(pil_small)
 
+corrected = correct_image(cv_small, ctype=ctype)
+'''
 # 3) 보정 적용 (alpha 인자 호환 처리)
 try:
     corrected = correct_image(cv_small, ctype=ctype, alpha=alpha)
 except TypeError:
     # 배포/로컬 간 버전 차이 등으로 alpha 미지원일 때
     corrected = correct_image(cv_small, ctype=ctype)
+    '''
 
 masked_src = cv_small
 masked_dst = corrected
