@@ -1,10 +1,11 @@
 import streamlit as st
 st.set_page_config(page_title="TrueColor", layout="wide")
 
+# ===== CSS 커서 스타일 =====
 st.markdown(
     """
     <style>
-    /* selectbox hover 시 cursor를 기본 화살표로 */
+    /* selectbox 입력 영역 + 드롭다운 항목 모두에 적용 */
     div[data-baseweb="select"] {
         cursor: default !important;
     }
