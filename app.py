@@ -1,10 +1,10 @@
 import streamlit as st
-st.set_page_config(page_title="TrueColor", layout="wide")  # 반드시 첫 번째 Streamlit 호출(1회만)
+st.set_page_config(page_title="TrueColor", layout="wide")
 
 import numpy as np
 from PIL import Image
 
-from daltonize import correct_image  # 보정 함수
+from daltonize import correct_image
 from image_utils import pil_to_cv, cv_to_pil, safe_resize, side_by_side
 
 # ===== 사이드바 =====
@@ -66,17 +66,18 @@ masked_dst = corrected
 c1, c2 = st.columns([1, 1], gap="medium")
 with c1:
     st.subheader("원본")
-    st.image(cv_to_pil(masked_src), use_container_width=True)
+    st.image(cv_to_pil(masked_src), use_column_width=True)
 with c2:
     st.subheader("보정 결과")
-    st.image(cv_to_pil(masked_dst), use_container_width=True)
+    st.image(cv_to_pil(masked_dst), use_column_width=True)
+
 
 # (2) 전/후 비교(동일 간격)
 st.subheader("전/후 비교 (가로 병치)")
 c3, c4 = st.columns([1, 1], gap="medium")
 with c3:
-    st.image(cv_to_pil(masked_src), use_container_width=True, caption="원본")
+    st.image(cv_to_pil(masked_src), use_column_width=True, caption="원본")
 with c4:
-    st.image(cv_to_pil(masked_dst), use_container_width=True, caption=f"보정 ({ctype})")
+    st.image(cv_to_pil(masked_dst), use_column_width=True, caption=f"보정 ({ctype})")
 
 st.caption("Tip: 사이드바에서 처리 해상도를 조절해 성능/품질을 맞춰보세요.")
