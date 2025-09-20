@@ -1,10 +1,8 @@
 # app.py (정리/보강 최종본)
-import io
 from io import BytesIO
 import streamlit as st
 st.set_page_config(page_title="TrueColor", layout="wide")
 
-import numpy as np
 from PIL import Image, ImageOps
 
 from daltonize import correct_image
