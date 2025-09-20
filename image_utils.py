@@ -45,31 +45,25 @@ def safe_resize(img: Image.Image | np.ndarray, target_long: int = 1200) -> Image
     return pil.resize(new_size, Image.LANCZOS)
 
 # ---------- 원형 마스크 ----------
-def apply_circle_mask(arr: np.ndarray, margin: int = 20) -> np.ndarray:
+def apply_circle_mask(arr: np.ndarray, bg_gray: int = 200, margin: int = 20) -> np.ndarray:
     """
     입력: OpenCV ndarray(BGR)
-    출력: OpenCV ndarray(BGRA) - 원형 영역만 원본, 바깥은 투명
+    출력: OpenCV ndarray(BGRA) - 원형 영역만 원본, 바깥은 bg_gray 색상
     """
     if not isinstance(arr, np.ndarray):
         arr = pil_to_cv(arr)
 
     h, w = arr.shape[:2]
     mask = np.zeros((h, w), dtype=np.uint8)
-
     cx, cy = w // 2, h // 2
     r = max(1, min(cx, cy) - margin)
-
-    # 원형 마스크 (흰색 부분 = 보이는 영역)
     cv2.circle(mask, (cx, cy), r, 255, thickness=-1)
 
-    # BGR → BGRA (알파 채널 추가)
-    if arr.shape[2] == 3:
-        arr = cv2.cvtColor(arr, cv2.COLOR_BGR2BGRA)
-
-    # 바깥은 알파 0, 안쪽은 알파 255
-    arr[:, :, 3] = mask
-
-    return arr
+    # 배경색 채우기
+    bg = np.full_like(arr, bg_gray, dtype=np.uint8)
+    out = bg.copy()
+    out[mask == 255] = arr[mask == 255]
+    return out
 
 
 # ---------- 좌우 비교 합치기 ----------
