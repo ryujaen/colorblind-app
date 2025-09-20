@@ -16,17 +16,18 @@ def pil_to_cv(img: Image.Image) -> np.ndarray:
     arr = np.array(img)
     return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
-def cv_to_pil(arr: np.ndarray) -> Image.Image:
-    if arr.ndim == 2:
-        return Image.fromarray(arr)
-    if arr.shape[2] == 4:
-        rgba = cv2.cvtColor(arr, cv2.COLOR_BGRA2RGBA)
-        return Image.fromarray(rgba)
-    rgb = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
-    return Image.fromarray(rgb)
+def pil_to_cv(img: Image.Image) -> np.ndarray:
+    if img.mode in ("RGBA", "LA"):
+        img = img.convert("RGBA")
+        arr = np.array(img)
+        return cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    return cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+
 
 def safe_resize(img: Image.Image | np.ndarray, target_long: int = 1200) -> Image.Image:
-    pil = img if isinstance(img, Image.Image) else cv_to_pil(img)
+    pil = img if isinstance(img, Image.Image) else pil_to_cv(img)
     w, h = pil.size
     m = max(w, h)
     if m <= target_long:
@@ -59,40 +60,35 @@ def side_by_side(left: np.ndarray | Image.Image,
                  right: np.ndarray | Image.Image,
                  gap: int = 0,
                  bg_value: int = 0) -> np.ndarray:
-    """
-    좌우 이미지를 같은 높이로 맞춘 뒤 가로로 이어 붙인다.
-    - 어떤 입력이 와도 최종 3채널(BGR)로 정규화
-    - gap: 두 이미지 사이 간격 (px), 배경은 bg_value로 채움
-    """
-    # 1) numpy로 확보
-    L = left  if isinstance(left,  np.ndarray) else pil_to_cv(left)
+    """두 이미지를 같은 높이로 맞춰 좌우로 붙임(항상 3채널 BGR)."""
+    L = left if isinstance(left, np.ndarray) else pil_to_cv(left)
     R = right if isinstance(right, np.ndarray) else pil_to_cv(right)
 
-    # 2) 채널 정규화 → 항상 3채널
-    if L.ndim == 2:  # GRAY
+    # --- 채널 정규화: 항상 3채널 ---
+    if L.ndim == 2:
         L = cv2.cvtColor(L, cv2.COLOR_GRAY2BGR)
     if R.ndim == 2:
         R = cv2.cvtColor(R, cv2.COLOR_GRAY2BGR)
-    if L.shape[2] == 4:  # BGRA -> BGR
+    if L.shape[2] == 4:
         L = L[:, :, :3]
     if R.shape[2] == 4:
         R = R[:, :, :3]
 
-    # 3) 높이 맞추기
+    # --- 높이 맞추기 ---
     h = max(L.shape[0], R.shape[0])
 
-    def resize_h(a: np.ndarray) -> np.ndarray:
+    def _resize_h(a: np.ndarray) -> np.ndarray:
         scale = h / a.shape[0]
         w = max(1, int(a.shape[1] * scale))
         return cv2.resize(a, (w, h), interpolation=cv2.INTER_LANCZOS4)
 
-    Lr, Rr = resize_h(L), resize_h(R)
+    Lr, Rr = _resize_h(L), _resize_h(R)
 
-    # 4) 출력 캔버스 (항상 채널=3)
+    # --- 출력 캔버스: 세 번째 축은 반드시 3! ---
     out_w = Lr.shape[1] + gap + Rr.shape[1]
     out   = np.full((h, out_w, 3), bg_value, dtype=np.uint8)
 
-    # 5) 복사
+    # --- 복사 ---
     out[:, :Lr.shape[1], :] = Lr
     out[:, Lr.shape[1] + gap:, :] = Rr
     return out

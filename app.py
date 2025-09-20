@@ -1,8 +1,18 @@
-# --- app.py imports (robust) ---
-import streamlit as st
-from PIL import Image
+# app.py (상단)
 import numpy as np
+from PIL import Image
+import streamlit as st
+
+# 반드시 첫 Streamlit 호출
+st.set_page_config(page_title="TrueColor", layout="wide", initial_sidebar_state="expanded")
+
+# 아래부터 다른 import/디버그/출력
 from daltonize import correct_image, SUPPORTED_TYPES
+from image_utils import pil_to_cv, cv_to_pil, safe_resize, side_by_side
+# (디버그가 필요하면 set_page_config 다음 줄 이후에)
+# import image_utils as IU
+# st.caption(f"image_utils: {getattr(IU,'__file__','?')}")
+# st.caption(f"has side_by_side: {'side_by_side' in dir(IU)}")
 
 import image_utils as IU
 st.caption(f"side_by_side exists: {'side_by_side' in dir(IU)}")
@@ -33,7 +43,11 @@ except ImportError:
         return out
 # --- end imports ---
 
-st.set_page_config(page_title="TrueColor", layout="wide")
+try:
+    st.set_page_config(page_title="TrueColor", layout="wide")
+except st.errors.StreamlitAPIException:
+    pass  # 이미 호출된 경우 무시
+
 
 # ===== 사이드바 =====
 st.sidebar.title("TrueColor")
