@@ -3,6 +3,8 @@ from __future__ import annotations
 import numpy as np
 from PIL import Image
 import cv2
+from PIL import Image, ImageDraw
+
 
 # ---------- PIL <-> OpenCV ----------
 def pil_to_cv(img: Image.Image) -> np.ndarray:
@@ -95,4 +97,25 @@ def side_by_side(left: np.ndarray | Image.Image,
     out = np.full((h, Lr.shape[1] + gap + Rr.shape[1], 3), 255, dtype=np.uint8)
     out[:, :Lr.shape[1]] = Lr[:, :, :3]
     out[:, Lr.shape[1] + gap:] = Rr[:, :, :3]
+    return out
+
+def make_circular_rgba(pil_img: Image.Image, margin: int = 0) -> Image.Image:
+    """
+    Ishihara plate처럼 원형 콘텐츠만 보이도록, 원 밖은 투명 처리한 RGBA 이미지 반환
+    """
+    if pil_img.mode != "RGBA":
+        pil_img = pil_img.convert("RGBA")
+
+    w, h = pil_img.size
+    r = min(w, h) // 2 - max(0, margin)
+    cx, cy = w // 2, h // 2
+
+    # 원형 마스크 만들기
+    mask = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
+
+    # 알파 채널 적용
+    r_, g_, b_, _ = pil_img.split()
+    out = Image.merge("RGBA", (r_, g_, b_, mask))
     return out

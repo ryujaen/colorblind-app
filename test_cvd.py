@@ -5,6 +5,8 @@ import json
 import re
 from pathlib import Path
 import streamlit as st
+from PIL import Image
+from image_utils import make_circular_rgba
 
 # ==============================
 # 입력 매핑 유틸
@@ -161,8 +163,11 @@ def run_color_vision_test() -> tuple[str | None, int | None]:
         if asked >= 8:
             break
 
-        # 이미지 표시
-        st.image(p.get("img"), use_container_width=True)
+        # 이미지 표시 (원 밖 투명 처리)
+        img_path = p.get("img")
+        plate = Image.open(img_path).convert("RGBA")
+        plate = make_circular_rgba(plate, margin=2)  # 필요하면 margin 조절
+        st.image(plate, use_container_width=True)
 
         # 자유 입력
         user_ans = st.text_input(
