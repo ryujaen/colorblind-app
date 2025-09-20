@@ -1,6 +1,12 @@
 import streamlit as st
 st.set_page_config(page_title="TrueColor", layout="wide")
 
+import numpy as np
+from PIL import Image
+
+from daltonize import correct_image
+from image_utils import pil_to_cv, cv_to_pil, safe_resize, side_by_side
+
 # ===== CSS 커서 스타일 =====
 st.markdown(
     """
@@ -16,13 +22,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
-
-import numpy as np
-from PIL import Image
-
-from daltonize import correct_image
-from image_utils import pil_to_cv, cv_to_pil, safe_resize, side_by_side
 
 # ===== 사이드바 =====
 st.sidebar.title("TrueColor")
@@ -65,16 +64,10 @@ if uploaded_img is None:
     st.stop()
 
 # ===== 처리 파이프라인 =====
-# 1) 안전 리사이즈(속도/메모리 절감) -> PIL
-pil_small = safe_resize(uploaded_img, target_long=max_width)
+pil_small = safe_resize(uploaded_img, target_long=max_width)   # 안전 리사이즈
+cv_small = pil_to_cv(pil_small)                               # OpenCV 변환
+corrected = correct_image(cv_small, ctype=ctype)              # 색 보정 적용
 
-# 2) OpenCV 배열로 변환 -> ndarray(BGR)
-cv_small = pil_to_cv(pil_small)
-
-# 3) 보정 적용 -> ndarray(BGR)
-corrected = correct_image(cv_small, ctype=ctype)
-
-# 4) 마스크 비적용: 원본/보정 전체 사용
 masked_src = cv_small
 masked_dst = corrected
 
@@ -88,8 +81,7 @@ with c2:
     st.subheader("보정 결과")
     st.image(cv_to_pil(masked_dst), use_column_width=True)
 
-
-# (2) 전/후 비교(동일 간격)
+# (2) 전/후 비교 (가로 병치)
 st.subheader("전/후 비교 (가로 병치)")
 c3, c4 = st.columns([1, 1], gap="medium")
 with c3:
