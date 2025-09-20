@@ -91,29 +91,27 @@ dst_pil = cv_to_pil(masked_dst)
 
 with c1:
     st.subheader("원본")
-    st.image(src_pil, use_container_width=True)
+    st.image(src_pil, use_column_width=True)
     buf_src = BytesIO()
     src_pil.save(buf_src, format="PNG")
     st.download_button(
-        "🖼️ 원본 이미지 다운로드",
-        data=buf_src.getvalue(),
-        file_name=f"truecolor_original_{max_width}px.png",
-        mime="image/png",
-        use_container_width=True,
-    )
+    "🖼️ 원본 이미지 다운로드",
+    data=buf_src.getvalue(),
+    file_name=f"truecolor_original_{max_width}px.png",
+    mime="image/png",
+)
 
 with c2:
     st.subheader("보정 결과")
-    st.image(dst_pil, use_container_width=True)
+    st.image(dst_pil, use_column_width=True)
     buf_dst = BytesIO()
     dst_pil.save(buf_dst, format="PNG")
     st.download_button(
-        "✅ 보정 이미지 다운로드",
-        data=buf_dst.getvalue(),
-        file_name=f"truecolor_{ctype}_alpha{alpha}_{max_width}px.png",
-        mime="image/png",
-        use_container_width=True,
-    )
+    "✅ 보정 이미지 다운로드",
+    data=buf_dst.getvalue(),
+    file_name=f"truecolor_{ctype}_alpha{alpha}_{max_width}px.png",
+    mime="image/png",
+)
 
 # 전/후 비교(병치) 미리보기 + 다운로드
 st.subheader("전/후 비교 (가로 병치)")
@@ -122,9 +120,9 @@ compare_pil = cv_to_pil(compare_cv)
 
 c3, c4 = st.columns([1, 1], gap="medium")
 with c3:
-    st.image(src_pil, use_container_width=True, caption="원본")
+    st.image(src_pil, use_column_width=True, caption="원본")
 with c4:
-    st.image(dst_pil, use_container_width=True, caption=f"보정 ({ctype}, α={alpha})")
+    st.image(dst_pil, use_column_width=True, caption=f"보정 ({ctype}, α={alpha})")
 
 comp_buf = BytesIO()
 compare_pil.save(comp_buf, format="PNG")
@@ -133,7 +131,6 @@ st.download_button(
     data=comp_buf.getvalue(),
     file_name=f"truecolor_compare_{ctype}_alpha{alpha}_{max_width}px.png",
     mime="image/png",
-    use_container_width=True,
 )
 
 st.caption("Tip: 사이드바에서 해상도와 보정 강도를 조절해 성능/품질/효과를 맞춰보세요.")
