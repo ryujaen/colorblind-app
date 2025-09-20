@@ -2,6 +2,7 @@
 import streamlit as st
 from PIL import Image
 import numpy as np
+from daltonize import correct_image, SUPPORTED_TYPES
 
 # image_utils에서 가능한 건 가져오고, 누락된 건 로컬 폴백 정의
 try:
@@ -46,6 +47,12 @@ max_width = st.sidebar.slider("처리 해상도 (긴 변 기준 px)", 480, 1280,
 
 st.sidebar.divider()
 #use_camera = st.sidebar.toggle("브라우저 카메라 사용", value=False, help="브라우저가 지원될 때 권장(st.camera_input).")
+
+# --- debug 확인용 ---
+import image_utils as IU
+st.caption(f"image_utils path: {getattr(IU,'__file__','?')}")
+st.caption(f"has side_by_side: {'side_by_side' in dir(IU)}")
+# --- 여기까지 ---
 
 # ===== 본문 =====
 st.title("TrueColor – 색상 보정 전/후 비교")
