@@ -57,26 +57,42 @@ def apply_circle_mask(arr: np.ndarray, bg_gray: int = 200, margin: int = 20) -> 
 
 def side_by_side(left: np.ndarray | Image.Image,
                  right: np.ndarray | Image.Image,
-                 gap: int = 3) -> np.ndarray:   # 기본 gap도 0으로 해서 선 없음
+                 gap: int = 0,
+                 bg_value: int = 0) -> np.ndarray:
     """
     좌우 이미지를 같은 높이로 맞춘 뒤 가로로 이어 붙인다.
-    gap: 이미지 사이 간격 (기본 0)
+    - 어떤 입력이 와도 최종 3채널(BGR)로 정규화
+    - gap: 두 이미지 사이 간격 (px), 배경은 bg_value로 채움
     """
-    L = left if isinstance(left, np.ndarray) else pil_to_cv(left)
+    # 1) numpy로 확보
+    L = left  if isinstance(left,  np.ndarray) else pil_to_cv(left)
     R = right if isinstance(right, np.ndarray) else pil_to_cv(right)
 
-    # 같은 높이로 리사이즈
+    # 2) 채널 정규화 → 항상 3채널
+    if L.ndim == 2:  # GRAY
+        L = cv2.cvtColor(L, cv2.COLOR_GRAY2BGR)
+    if R.ndim == 2:
+        R = cv2.cvtColor(R, cv2.COLOR_GRAY2BGR)
+    if L.shape[2] == 4:  # BGRA -> BGR
+        L = L[:, :, :3]
+    if R.shape[2] == 4:
+        R = R[:, :, :3]
+
+    # 3) 높이 맞추기
     h = max(L.shape[0], R.shape[0])
-    def _resize_h(a: np.ndarray, h: int) -> np.ndarray:
+
+    def resize_h(a: np.ndarray) -> np.ndarray:
         scale = h / a.shape[0]
         w = max(1, int(a.shape[1] * scale))
         return cv2.resize(a, (w, h), interpolation=cv2.INTER_LANCZOS4)
 
-    Lr, Rr = _resize_h(L, h), _resize_h(R, h)
+    Lr, Rr = resize_h(L), resize_h(R)
 
-    # 새 캔버스 배경을 흰색 대신 검은색/투명 대신 "왼쪽 이미지 픽셀"로 채우기
-    out = np.zeros((h, Lr.shape[1] + gap + Rr.shape[1], 0), np.uint8)
-    out[:, :Lr.shape[1]] = Lr[:, :, :3]
-    out[:, Lr.shape[1] + gap:] = Rr[:, :, :3]
+    # 4) 출력 캔버스 (항상 채널=3)
+    out_w = Lr.shape[1] + gap + Rr.shape[1]
+    out   = np.full((h, out_w, 3), bg_value, dtype=np.uint8)
+
+    # 5) 복사
+    out[:, :Lr.shape[1], :] = Lr
+    out[:, Lr.shape[1] + gap:, :] = Rr
     return out
-

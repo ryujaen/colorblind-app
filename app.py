@@ -4,6 +4,9 @@ from PIL import Image
 import numpy as np
 from daltonize import correct_image, SUPPORTED_TYPES
 
+import image_utils as IU
+st.caption(f"side_by_side exists: {'side_by_side' in dir(IU)}")
+
 # image_utils에서 가능한 건 가져오고, 누락된 건 로컬 폴백 정의
 try:
     from image_utils import (
