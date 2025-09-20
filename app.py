@@ -108,12 +108,10 @@ with c2:
     st.subheader("보정 결과 (마스크 적용)")
     st.image(cv_to_pil(masked_dst), use_container_width=True)
 
-# 전/후 비교도 같은 방식으로
+# 전/후 비교 (가로 병치)
 st.subheader("전/후 비교 (가로 병치)")
 c3, c4 = st.columns([1, 1], gap="medium")
 with c3:
     st.image(cv_to_pil(masked_src), use_container_width=True, caption="원본")
 with c4:
     st.image(cv_to_pil(masked_dst), use_container_width=True, caption=f"보정 ({ctype})")
-
-st.caption("Tip: 사이드바에서 처리 해상도를 조절해보세요.")
