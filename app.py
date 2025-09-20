@@ -5,7 +5,7 @@ from PIL import Image
 
 from daltonize import correct_image, SUPPORTED_TYPES
 from image_utils import (
-    pil_to_cv, cv_to_pil, safe_resize, apply_circle_mask, side_by_side
+    pil_to_cv, cv_to_pil, safe_resize, side_by_side
 )
 
 st.set_page_config(page_title="TrueColor", layout="wide")
@@ -20,11 +20,11 @@ ctype = st.sidebar.selectbox(
     format_func=lambda x: {"protan": "Protanopia", "deutan": "Deuteranopia", "tritan": "Tritanopia"}[x],
 )
 
-mask_bg = st.sidebar.select_slider("원형 마스크 배경 밝기", options=list(range(160, 241, 10)), value=200)
+#mask_bg = st.sidebar.select_slider("원형 마스크 배경 밝기", options=list(range(160, 241, 10)), value=200)
 max_width = st.sidebar.slider("처리 해상도 (긴 변 기준 px)", 480, 1280, 720, step=40)
 
 st.sidebar.divider()
-use_camera = st.sidebar.toggle("브라우저 카메라 사용", value=False, help="브라우저가 지원될 때 권장(st.camera_input).")
+#use_camera = st.sidebar.toggle("브라우저 카메라 사용", value=False, help="브라우저가 지원될 때 권장(st.camera_input).")
 
 # ===== 본문 =====
 st.title("TrueColor – 색상 보정 전/후 비교")
@@ -39,12 +39,14 @@ with col_u1:
     if img_file:
         uploaded_img = Image.open(img_file).convert("RGB")
 
+'''
 with col_u2:
     st.subheader("② 카메라 입력 (옵션)")
     if use_camera:
         cam_buf = st.camera_input("카메라로 촬영")
         if cam_buf:
             uploaded_img = Image.open(cam_buf).convert("RGB")
+'''
 
 st.divider()
 
@@ -62,9 +64,9 @@ cv_small = pil_to_cv(pil_small)
 # 3) 보정 적용 -> ndarray(BGR)
 corrected = correct_image(cv_small, ctype=ctype)
 
-# 4) 원형 마스크(옵션)
-masked_src = apply_circle_mask(cv_small, bg_gray=mask_bg)
-masked_dst = apply_circle_mask(corrected, bg_gray=mask_bg)
+# 4) 마스크 비적용 (그냥 원본/보정 전체 사용)
+masked_src = cv_small
+masked_dst = corrected
 
 # 5) 전/후 합성 -> ndarray(BGR)
 compare = side_by_side(masked_src, masked_dst)
