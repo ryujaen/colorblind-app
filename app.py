@@ -1,6 +1,22 @@
 import streamlit as st
 st.set_page_config(page_title="TrueColor", layout="wide")
 
+st.markdown(
+    """
+    <style>
+    /* selectbox hover 시 cursor를 기본 화살표로 */
+    div[data-baseweb="select"] {
+        cursor: default !important;
+    }
+    div[data-baseweb="select"] * {
+        cursor: default !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 import numpy as np
 from PIL import Image
 
