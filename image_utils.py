@@ -1,127 +1,85 @@
 # image_utils.py
 from __future__ import annotations
-import os
-from pathlib import Path
-from typing import Tuple, Iterable, Union
-
+import io
+from typing import Tuple
 import numpy as np
-import cv2
 from PIL import Image
+import cv2
 
-ArrayLike = Union[np.ndarray, Image.Image, str, Path]
+# --------- PIL <-> OpenCV 변환 ---------
+def pil_to_cv(img: Image.Image) -> np.ndarray:
+    """PIL.Image -> OpenCV BGR ndarray (uint8). RGBA도 안전하게 처리."""
+    if not isinstance(img, Image.Image):
+        raise TypeError("pil_to_cv expects PIL.Image")
+    if img.mode in ("RGBA", "LA"):
+        img = img.convert("RGBA")
+        arr = np.array(img)
+        bgr = cv2.cvtColor(arr, cv2.COLOR_RGBA2BGRA)
+        return bgr
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    arr = np.array(img)
+    bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+    return bgr
 
-
-# -------------------------
-# 기본 로드/세이브 유틸
-# -------------------------
-def load_image(x: ArrayLike) -> np.ndarray:
-    """파일 경로/PIL/ndarray 입력을 모두 RGB ndarray(H,W,3)로 변환."""
-    if isinstance(x, (str, Path)):
-        img = Image.open(x).convert("RGBA")
-    elif isinstance(x, Image.Image):
-        img = x.convert("RGBA")
-    elif isinstance(x, np.ndarray):
-        # ndarray면 채널 수에 따라 정리
-        arr = x
-        if arr.ndim == 2:
-            arr = np.stack([arr]*3, axis=-1)
-        if arr.shape[2] == 3:
-            img = Image.fromarray(arr.astype(np.uint8), "RGB").convert("RGBA")
-        elif arr.shape[2] == 4:
-            img = Image.fromarray(arr.astype(np.uint8), "RGBA")
-        else:
-            raise ValueError("Unsupported ndarray shape.")
-    else:
-        raise TypeError("Unsupported input type.")
-    return np.array(img)[:, :, :4]  # RGBA ndarray
-
-
-def save_image(arr: np.ndarray, path: Union[str, Path], format: str | None = None):
-    """RGBA/RGB ndarray를 파일로 저장. 확장자에 따라 자동 저장."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def cv_to_pil(arr: np.ndarray) -> Image.Image:
+    """OpenCV BGR/BGRA ndarray -> PIL.Image"""
+    if arr.ndim == 2:
+        return Image.fromarray(arr)
     if arr.shape[2] == 4:
-        img = Image.fromarray(arr.astype(np.uint8), "RGBA")
-    else:
-        img = Image.fromarray(arr.astype(np.uint8), "RGB")
-    img.save(path, format=format)
+        rgba = cv2.cvtColor(arr, cv2.COLOR_BGRA2RGBA)
+        return Image.fromarray(rgba)
+    rgb = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)
+    return Image.fromarray(rgb)
 
-
-# -------------------------
-# 배경 강제(흰/검정 등 단색)
-# -------------------------
-def add_solid_background(x: ArrayLike, color: Tuple[int, int, int] = (255, 255, 255)) -> np.ndarray:
-    """투명 PNG 등에 단색 배경을 깔아 RGB로 반환."""
-    rgba = load_image(x)
-    rgb, a = rgba[:, :, :3], rgba[:, :, 3:4] / 255.0
-    bg = np.zeros_like(rgb) + np.array(color, dtype=np.uint8)
-    out = (rgb * a + bg * (1.0 - a)).astype(np.uint8)
-    return out  # RGB
-
-
-def batch_add_background(src_dir: Union[str, Path],
-                         dst_dir: Union[str, Path],
-                         color: Tuple[int, int, int] = (255, 255, 255),
-                         exts: Iterable[str] = (".png", ".jpg", ".jpeg", ".webp")):
-    src_dir, dst_dir = Path(src_dir), Path(dst_dir)
-    for p in src_dir.rglob("*"):
-        if p.suffix.lower() in exts:
-            out = add_solid_background(p, color)
-            rel = p.relative_to(src_dir)
-            save_image(out, Path(dst_dir, rel).with_suffix(".jpg"))  # 통일 저장
-
-
-# -------------------------
-# 원형 마스크(원 밖을 회색/검정/흰 등으로)
-# -------------------------
-def apply_circle_mask(x: ArrayLike,
-                      bg: Tuple[int, int, int] = (200, 200, 200),
-                      margin: int = 20,
-                      feather: int = 0) -> np.ndarray:
+# --------- 안전 리사이즈 ---------
+def safe_resize(img: Image.Image | np.ndarray, max_side: int = 1200) -> Image.Image:
     """
-    이미지 중앙에 원형 마스크를 만들고, 원 밖은 단색(bg)으로 채움.
-    - bg: 원 밖 배경색 (R,G,B)
-    - margin: 테두리 여백(px) -> 원 반지름을 조금 줄임
-    - feather: 가장자리 부드러움(가우시안 블러 커널, 짝수면 자동 홀수화)
-    반환: RGB ndarray
+    긴 변이 max_side를 넘으면 비율 유지 축소. PIL 이미지를 반환.
     """
-    rgba = load_image(x)
-    h, w = rgba.shape[:2]
-    rgb = rgba[:, :, :3]
+    if isinstance(img, np.ndarray):
+        img = cv_to_pil(img)
+    w, h = img.size
+    m = max(w, h)
+    if m <= max_side:
+        return img
+    scale = max_side / float(m)
+    new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+    return img.resize(new_size, Image.LANCZOS)
 
-    # 원형 마스크
+# --------- 원형 마스크(바깥은 회색 처리) ---------
+def apply_circle_mask(img: Image.Image | np.ndarray, outside_gray: int = 200, margin: int = 20) -> Image.Image:
+    """
+    중앙 원형 영역만 원본을 보이고, 바깥은 회색(기본 200)으로 처리.
+    """
+    pil = img if isinstance(img, Image.Image) else cv_to_pil(img)
+    pil = pil.convert("RGB")
+    arr = np.array(pil)
+    h, w = arr.shape[:2]
+
     mask = np.zeros((h, w), dtype=np.uint8)
-    center = (w // 2, h // 2)
-    radius = max(1, min(center) - margin)
-    cv2.circle(mask, center, radius, 255, thickness=-1)
+    cx, cy = w // 2, h // 2
+    r = max(1, min(cx, cy) - margin)
+    cv2.circle(mask, (cx, cy), r, 255, thickness=-1)
 
-    if feather and feather > 0:
-        k = feather if feather % 2 == 1 else feather + 1
-        mask = cv2.GaussianBlur(mask, (k, k), 0)
+    result = np.full_like(arr, outside_gray, dtype=np.uint8)
+    result[mask == 255] = arr[mask == 255]
+    return Image.fromarray(result)
 
-    mask_f = (mask / 255.0)[:, :, None]
-    bg_img = np.zeros_like(rgb) + np.array(bg, dtype=np.uint8)
-    out = (rgb * mask_f + bg_img * (1.0 - mask_f)).astype(np.uint8)
-    return out  # RGB
+# --------- 비교 이미지 합치기 ---------
+def side_by_side(left: Image.Image | np.ndarray, right: Image.Image | np.ndarray, gap: int = 16) -> Image.Image:
+    """
+    좌우 이미지를 같은 높이로 맞춘 뒤 가로로 이어 붙인다.
+    """
+    L = left if isinstance(left, Image.Image) else cv_to_pil(left)
+    R = right if isinstance(right, Image.Image) else cv_to_pil(right)
+    L, R = L.convert("RGB"), R.convert("RGB")
 
+    h = max(L.height, R.height)
+    L = L.resize((int(L.width * h / L.height), h), Image.LANCZOS)
+    R = R.resize((int(R.width * h / R.height), h), Image.LANCZOS)
 
-def apply_circle_mask_to_path(in_path: Union[str, Path],
-                              out_path: Union[str, Path],
-                              **kwargs):
-    out = apply_circle_mask(in_path, **kwargs)
-    save_image(out, out_path)
-
-
-def batch_apply_circle_mask(src_dir: Union[str, Path],
-                            dst_dir: Union[str, Path],
-                            bg: Tuple[int, int, int] = (200, 200, 200),
-                            margin: int = 20,
-                            feather: int = 0,
-                            exts: Iterable[str] = (".png", ".jpg", ".jpeg", ".webp")):
-    src_dir, dst_dir = Path(src_dir), Path(dst_dir)
-    for p in src_dir.rglob("*"):
-        if p.suffix.lower() in exts:
-            rel = p.relative_to(src_dir)
-            out_path = Path(dst_dir, rel).with_suffix(".png")
-            out = apply_circle_mask(p, bg=bg, margin=margin, feather=feather)
-            save_image(out, out_path)
+    out = Image.new("RGB", (L.width + gap + R.width, h), (255, 255, 255))
+    out.paste(L, (0, 0))
+    out.paste(R, (L.width + gap, 0))
+    return out

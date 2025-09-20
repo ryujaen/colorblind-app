@@ -3,10 +3,9 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
+
 from daltonize import correct_image, SUPPORTED_TYPES
-from image_utils import (
-    pil_to_cv, cv_to_pil, safe_resize, apply_circle_mask, side_by_side
-)
+from image_utils import (pil_to_cv, cv_to_pil, safe_resize, apply_circle_mask, side_by_side)
 
 st.set_page_config(page_title="TrueColor", layout="wide")
 
