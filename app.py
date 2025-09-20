@@ -100,7 +100,7 @@ masked_dst = corrected
 compare = side_by_side(masked_src, masked_dst)
 
 # ===== 출력 =====
-c1, c2 = st.columns([1, 1])
+c1, c2 = st.columns([1, 1], gap="medium")
 with c1:
     st.subheader("원본 (마스크 적용)")
     st.image(cv_to_pil(masked_src), use_column_width=True)

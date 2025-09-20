@@ -57,7 +57,7 @@ def apply_circle_mask(arr: np.ndarray, bg_gray: int = 200, margin: int = 20) -> 
 
 def side_by_side(left: np.ndarray | Image.Image,
                  right: np.ndarray | Image.Image,
-                 gap: int = 0) -> np.ndarray:   # 기본 gap도 0으로 해서 선 없음
+                 gap: int = 3) -> np.ndarray:   # 기본 gap도 0으로 해서 선 없음
     """
     좌우 이미지를 같은 높이로 맞춘 뒤 가로로 이어 붙인다.
     gap: 이미지 사이 간격 (기본 0)
@@ -75,7 +75,7 @@ def side_by_side(left: np.ndarray | Image.Image,
     Lr, Rr = _resize_h(L, h), _resize_h(R, h)
 
     # 새 캔버스 배경을 흰색 대신 검은색/투명 대신 "왼쪽 이미지 픽셀"로 채우기
-    out = np.zeros((h, Lr.shape[1] + gap + Rr.shape[1], 3), np.uint8)
+    out = np.zeros((h, Lr.shape[1] + gap + Rr.shape[1], 0), np.uint8)
     out[:, :Lr.shape[1]] = Lr[:, :, :3]
     out[:, Lr.shape[1] + gap:] = Rr[:, :, :3]
     return out
