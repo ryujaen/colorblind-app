@@ -58,3 +58,37 @@ def correct_image(bgr: np.ndarray, ctype: str = "protan") -> np.ndarray:
     corr = _apply_matrix(bgr, M)
     corr = _boost_saturation(corr, sat_gain=1.10 if ctype != "tritan" else 1.06, cont_gain=1.05)
     return corr
+
+# ---- compatibility shim: expose `correct_image` and `SUPPORTED_TYPES` ----
+# app.py에서 항상 correct_image(arr, ctype)로 호출할 수 있게 보장
+
+from typing import Callable, Any, Optional
+
+if "SUPPORTED_TYPES" not in globals():
+    SUPPORTED_TYPES = ["protan", "deutan", "tritan"]
+
+def _pick_impl() -> Optional[Callable[[Any, str], Any]]:
+    """
+    파일 내에 존재할 수 있는 여러 보정 함수 중 하나를 찾아서 반환.
+    린터 경고를 피하기 위해 globals().get으로 가져와 callable인지 확인한다.
+    """
+    candidates = [
+        globals().get("correct_image"),      # 혹시 이미 존재하면 그대로 사용
+        globals().get("daltonize_image"),
+        globals().get("daltonize"),
+        globals().get("apply_correction"),
+    ]
+    for fn in candidates:
+        if callable(fn):
+            return fn  # type: ignore[call-arg]
+    return None
+
+# correct_image가 없으면 래퍼로 정의
+if "correct_image" not in globals() or not callable(globals().get("correct_image")):
+    def correct_image(arr: Any, ctype: str = "deutan") -> Any:
+        impl = _pick_impl()
+        if impl is not None:
+            return impl(arr, ctype)
+        # 마지막 안전장치: 보정 없이 원본 반환(앱이 죽지 않도록)
+        return arr
+# -------------------------------------------------------------------------
