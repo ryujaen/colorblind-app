@@ -1,94 +1,138 @@
-import cv2
+# daltonize.py (최종본)
+from __future__ import annotations
+from typing import Any, Callable, Optional
 import numpy as np
+import cv2
 
-SUPPORTED_TYPES = {"protan", "deutan", "tritan"}
+# 앱에서 노출할 지원 타입
+SUPPORTED_TYPES = ["protan", "deutan", "tritan"]
 
-# 참고: 표준화된 단순 근사 행렬(경량 데모용)
-# 필요 시 Daltonization(시뮬+보정) 전체 파이프라인으로 교체 가능
-MATS = {
-    "protan": np.array([[0.567, 0.433, 0.000],
-                        [0.558, 0.442, 0.000],
-                        [0.000, 0.242, 0.758]], dtype=np.float32),
-    "deutan": np.array([[0.625, 0.375, 0.000],
-                        [0.700, 0.300, 0.000],
-                        [0.000, 0.300, 0.700]], dtype=np.float32),
-    "tritan": np.array([[0.950, 0.050, 0.000],
-                        [0.000, 0.433, 0.567],
-                        [0.000, 0.475, 0.525]], dtype=np.float32),
-}
 
-def _apply_matrix(bgr: np.ndarray, M: np.ndarray) -> np.ndarray:
-    """BGR -> RGB 행렬 적용 -> BGR (uint8)"""
-    # to float in [0,1]
-    img = bgr.astype(np.float32) / 255.0
-    # BGR -> RGB
-    img_rgb = img[..., ::-1]
-    h, w, _ = img_rgb.shape
-    flat = img_rgb.reshape(-1, 3)
-    out = flat @ M.T
-    out = np.clip(out, 0.0, 1.0).reshape(h, w, 3)
-    # RGB -> BGR
-    out_bgr = (out[..., ::-1] * 255.0 + 0.5).astype(np.uint8)
-    return out_bgr
-
-def _boost_saturation(bgr: np.ndarray, sat_gain: float = 1.12, cont_gain: float = 1.05) -> np.ndarray:
-    """
-    경량 채도/대비 보정.
-    - 과도한 채도 폭주 방지 위해 HSV 기반으로 살짝만 증폭.
-    """
-    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
-    h, s, v = cv2.split(hsv)
-    s *= sat_gain
-    v = (v - 127.5) * cont_gain + 127.5  # 간단 대비
-    s = np.clip(s, 0, 255)
-    v = np.clip(v, 0, 255)
-    hsv_boost = cv2.merge([h, s, v]).astype(np.uint8)
-    out = cv2.cvtColor(hsv_boost, cv2.COLOR_HSV2BGR)
-    return out
-
-def correct_image(bgr: np.ndarray, ctype: str = "protan") -> np.ndarray:
-    """
-    색각 유형별 간단 보정(행렬) + 경량 채도/대비 강화.
-    - 데모/증빙용으로 충분한 시각적 구분 개선을 제공.
-    """
-    if ctype not in SUPPORTED_TYPES:
-        raise ValueError(f"Unsupported type: {ctype}")
-
-    M = MATS[ctype]
-    corr = _apply_matrix(bgr, M)
-    corr = _boost_saturation(corr, sat_gain=1.10 if ctype != "tritan" else 1.06, cont_gain=1.05)
-    return corr
-
-# ---- compatibility shim: expose `correct_image` and `SUPPORTED_TYPES` ----
-# app.py에서 항상 correct_image(arr, ctype)로 호출할 수 있게 보장
-
-from typing import Callable, Any, Optional
-
-if "SUPPORTED_TYPES" not in globals():
-    SUPPORTED_TYPES = ["protan", "deutan", "tritan"]
-
-def _pick_impl() -> Optional[Callable[[Any, str], Any]]:
-    """
-    파일 내에 존재할 수 있는 여러 보정 함수 중 하나를 찾아서 반환.
-    린터 경고를 피하기 위해 globals().get으로 가져와 callable인지 확인한다.
-    """
+# -------------------------------------------------------------------------
+# 내부 구현체 자동 탐색
+# - 프로젝트마다 실제 보정 구현이 위치한 모듈명이 다를 수 있어
+#   여기서 몇 가지 후보를 시도해보고, 있으면 그걸 사용
+# - 없으면 None 반환(래퍼에서 안전히 처리)
+# -------------------------------------------------------------------------
+def _pick_impl() -> Optional[Callable[[np.ndarray, str], np.ndarray]]:
     candidates = [
-        globals().get("correct_image"),      # 혹시 이미 존재하면 그대로 사용
-        globals().get("daltonize_image"),
-        globals().get("daltonize"),
-        globals().get("apply_correction"),
+        # 예시 후보들: 프로젝트 구조에 따라 알아서 맞는 게 있으면 import 성공
+        "daltonize_impl",          # ex) 로컬 구현
+        "dalton_impl",             # ex) 다른 이름으로 둔 구현
+        "cvd_impl",                # ex) 색각 보정 구현 별도 모듈
+        "truecolor.dalton_impl",   # ex) 패키지 내부 모듈
     ]
-    for fn in candidates:
-        if callable(fn):
-            return fn  # type: ignore[call-arg]
+    for name in candidates:
+        try:
+            mod = __import__(name, fromlist=["*"])
+            if hasattr(mod, "correct_image") and callable(mod.correct_image):
+                return getattr(mod, "correct_image")
+        except Exception:
+            continue
     return None
 
-# correct_image가 없으면 래퍼로 정의
-if "correct_image" not in globals() or not callable(globals().get("correct_image")):
-    def correct_image(arr: Any, ctype: str = "deutan") -> Any:
-        impl = _pick_impl()
-        if impl is not None:
-            return impl(arr, ctype)
-        # 마지막 안전장치: 보정 없이 원본 반환(앱이 죽지 않도록)
-        return arr
+
+def _pick_simulator() -> Optional[Callable[[np.ndarray, str], np.ndarray]]:
+    candidates = [
+        "daltonize_impl",
+        "dalton_impl",
+        "cvd_impl",
+        "truecolor.dalton_impl",
+    ]
+    for name in candidates:
+        try:
+            mod = __import__(name, fromlist=["*"])
+            if hasattr(mod, "simulate_cvd") and callable(mod.simulate_cvd):
+                return getattr(mod, "simulate_cvd")
+        except Exception:
+            continue
+    return None
+
+
 # -------------------------------------------------------------------------
+# 유틸: 입력/출력 안전성 보장
+# -------------------------------------------------------------------------
+def _ensure_bgr_uint8(arr: Any) -> np.ndarray:
+    """이미지 배열을 BGR(uint8)로 정규화."""
+    if not isinstance(arr, np.ndarray):
+        raise TypeError("correct_image expects a numpy.ndarray (OpenCV BGR)")
+    if arr.ndim != 3 or arr.shape[2] not in (3, 4):
+        raise ValueError("correct_image expects HxWxC with C in {3(BGR),4(BGRA)}")
+
+    out = arr
+    # BGRA -> BGR
+    if out.shape[2] == 4:
+        out = out[:, :, :3]
+
+    # dtype 정규화
+    if out.dtype != np.uint8:
+        # float 등인 경우 0~1 또는 0~255일 수 있으므로 보수적으로 클램프
+        out = np.clip(out, 0, 255).astype(np.uint8)
+
+    return out
+
+
+# -------------------------------------------------------------------------
+# 공개 API: 보정 (alpha 강도 지원)
+# -------------------------------------------------------------------------
+def correct_image(arr: Any, ctype: str = "deutan", alpha: float = 1.0) -> np.ndarray:
+    """
+    색각 이상 보정 래퍼.
+    - ctype: "protan" | "deutan" | "tritan"
+    - alpha: 1.0 = 100% 보정, 0.0 = 원본, 그 사이 혼합(선형 보간)
+
+    내부 구현체가 있으면 그걸 사용하고, 없으면 원본을 반환한다.
+    """
+    if ctype not in SUPPORTED_TYPES:
+        # 알 수 없는 유형은 기본값으로 폴백
+        ctype = "deutan"
+
+    base = _ensure_bgr_uint8(arr)
+    impl = _pick_impl()
+
+    if impl is None:
+        # 구현체가 없으면 보정 없이 alpha 무시하고 원본 반환(앱이 죽지 않게)
+        return base
+
+    try:
+        corrected = impl(base, ctype)
+        corrected = _ensure_bgr_uint8(corrected)
+    except Exception:
+        # 구현 호출 중 오류 시에도 앱이 죽지 않도록 원본 반환
+        return base
+
+    # alpha 혼합: out = alpha*corrected + (1-alpha)*original
+    if alpha is None:
+        alpha = 1.0
+    alpha = float(alpha)
+    if alpha == 1.0:
+        return corrected
+    if alpha == 0.0:
+        return base
+
+    # cv2.addWeighted은 자동 클램프 + 타입 보장
+    out = cv2.addWeighted(corrected, alpha, base, 1.0 - alpha, 0.0)
+    return out
+
+
+# -------------------------------------------------------------------------
+# 선택: 시뮬레이션(정상인이 특정 색각 이상처럼 보도록)
+# -------------------------------------------------------------------------
+def simulate_cvd(arr: Any, ctype: str = "deutan") -> np.ndarray:
+    """
+    색각 이상 시뮬레이션 래퍼(있으면 사용).
+    내부 구현체가 없으면 보정 없이 원본 반환.
+    """
+    if ctype not in SUPPORTED_TYPES:
+        ctype = "deutan"
+
+    base = _ensure_bgr_uint8(arr)
+    sim = _pick_simulator()
+    if sim is None:
+        return base
+
+    try:
+        out = sim(base, ctype)
+        return _ensure_bgr_uint8(out)
+    except Exception:
+        return base
