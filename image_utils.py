@@ -1,5 +1,5 @@
-# image_utils.py (최종)
-
+# image_utils.py (FINAL)
+from __future__ import annotations
 import numpy as np
 from PIL import Image
 import cv2
@@ -26,7 +26,6 @@ def cv_to_pil(arr: np.ndarray) -> Image.Image:
     return Image.fromarray(rgb)
 
 def safe_resize(img: Image.Image | np.ndarray, target_long: int = 1200) -> Image.Image:
-    """긴 변이 target_long을 넘으면 비율 유지 축소. PIL.Image 반환."""
     pil = img if isinstance(img, Image.Image) else cv_to_pil(img)
     w, h = pil.size
     m = max(w, h)
@@ -36,28 +35,38 @@ def safe_resize(img: Image.Image | np.ndarray, target_long: int = 1200) -> Image
     new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
     return pil.resize(new_size, Image.LANCZOS)
 
-def apply_circle_mask(arr, bg_gray: int = 200, margin: int = 20):
-    """
-    입력/출력: OpenCV ndarray(BGR 또는 BGRA).
-    중앙 원형만 원본, 바깥은 단색(bg_gray).
-    """
+def apply_circle_mask(arr: np.ndarray, bg_gray: int = 200, margin: int = 20) -> np.ndarray:
     if not isinstance(arr, np.ndarray):
         arr = pil_to_cv(arr)
-
     h, w = arr.shape[:2]
     mask = np.zeros((h, w), dtype=np.uint8)
     cx, cy = w // 2, h // 2
     r = max(1, min(cx, cy) - margin)
     cv2.circle(mask, (cx, cy), r, 255, thickness=-1)
-
     ch = 4 if arr.ndim == 3 and arr.shape[2] == 4 else 3
     if ch == 3:
-        bg = np.full((h, w, 3), bg_gray, dtype=np.uint8)
+        bg = np.full((h, w, 3), bg_gray, np.uint8)
         out = bg.copy()
         out[mask == 255] = arr[mask == 255]
         return out
     else:
-        bg = np.full((h, w, 4), (bg_gray, bg_gray, bg_gray, 255), dtype=np.uint8)
+        bg = np.full((h, w, 4), (bg_gray, bg_gray, bg_gray, 255), np.uint8)
         out = bg.copy()
         out[mask == 255] = arr[mask == 255]
         return out
+
+def side_by_side(left: np.ndarray | Image.Image,
+                 right: np.ndarray | Image.Image,
+                 gap: int = 16) -> np.ndarray:
+    L = left if isinstance(left, np.ndarray) else pil_to_cv(left)
+    R = right if isinstance(right, np.ndarray) else pil_to_cv(right)
+    h = max(L.shape[0], R.shape[0])
+    def _resize_h(a: np.ndarray, h: int) -> np.ndarray:
+        scale = h / a.shape[0]
+        w = max(1, int(a.shape[1] * scale))
+        return cv2.resize(a, (w, h), interpolation=cv2.INTER_LANCZOS4)
+    Lr, Rr = _resize_h(L, h), _resize_h(R, h)
+    out = np.full((h, Lr.shape[1] + gap + Rr.shape[1], 3), 255, np.uint8)
+    out[:, :Lr.shape[1]] = Lr[:, :, :3]
+    out[:, Lr.shape[1] + gap:] = Rr[:, :, :3]
+    return out

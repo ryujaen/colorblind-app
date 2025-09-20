@@ -1,12 +1,33 @@
-# app.py
-import numpy as np
+# --- app.py imports (robust) ---
 import streamlit as st
 from PIL import Image
+import numpy as np
 
-from daltonize import correct_image, SUPPORTED_TYPES
-from image_utils import (
-    pil_to_cv, cv_to_pil, safe_resize, side_by_side
-)
+# image_utils에서 가능한 건 가져오고, 누락된 건 로컬 폴백 정의
+try:
+    from image_utils import (
+        pil_to_cv, cv_to_pil, safe_resize, apply_circle_mask, side_by_side
+    )
+except ImportError:
+    from image_utils import (
+        pil_to_cv, cv_to_pil, safe_resize, apply_circle_mask
+    )
+    # 폴백 side_by_side (BGR ndarray 기준)
+    import cv2
+    def side_by_side(left, right, gap: int = 16):
+        L = left if isinstance(left, np.ndarray) else pil_to_cv(left)
+        R = right if isinstance(right, np.ndarray) else pil_to_cv(right)
+        h = max(L.shape[0], R.shape[0])
+        def _resize_h(a, h):
+            scale = h / a.shape[0]
+            w = max(1, int(a.shape[1] * scale))
+            return cv2.resize(a, (w, h), interpolation=cv2.INTER_LANCZOS4)
+        Lr, Rr = _resize_h(L, h), _resize_h(R, h)
+        out = np.full((h, Lr.shape[1] + gap + Rr.shape[1], 3), 255, np.uint8)
+        out[:, :Lr.shape[1]] = Lr[:, :, :3]
+        out[:, Lr.shape[1] + gap:] = Rr[:, :, :3]
+        return out
+# --- end imports ---
 
 st.set_page_config(page_title="TrueColor", layout="wide")
 
