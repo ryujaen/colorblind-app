@@ -43,33 +43,32 @@ def safe_resize(img: Image.Image | np.ndarray, target_long: int = 1200) -> Image
     return pil.resize(new_size, Image.LANCZOS)
 
 # ---------- 원형 마스크 ----------
-def apply_circle_mask(arr: np.ndarray, bg_gray: int = 200, margin: int = 20) -> np.ndarray:
+def apply_circle_mask(arr: np.ndarray, margin: int = 20) -> np.ndarray:
     """
-    입력/출력: OpenCV ndarray(BGR 또는 BGRA).
-    중앙 원형 부분만 원본 보이고, 바깥은 회색(bg_gray).
+    입력: OpenCV ndarray(BGR)
+    출력: OpenCV ndarray(BGRA) - 원형 영역만 원본, 바깥은 투명
     """
     if not isinstance(arr, np.ndarray):
-        arr = pil_to_cv(arr)  # 안전장치
+        arr = pil_to_cv(arr)
 
     h, w = arr.shape[:2]
     mask = np.zeros((h, w), dtype=np.uint8)
+
     cx, cy = w // 2, h // 2
     r = max(1, min(cx, cy) - margin)
+
+    # 원형 마스크 (흰색 부분 = 보이는 영역)
     cv2.circle(mask, (cx, cy), r, 255, thickness=-1)
 
-    # 결과 캔버스: 채널 수 유지
-    ch = 4 if arr.ndim == 3 and arr.shape[2] == 4 else 3
-    if ch == 3:
-        bg = np.full((h, w, 3), bg_gray, dtype=np.uint8)
-        out = bg.copy()
-        out[mask == 255] = arr[mask == 255]
-        return out
-    else:
-        # BGRA
-        bg = np.full((h, w, 4), (bg_gray, bg_gray, bg_gray, 255), dtype=np.uint8)
-        out = bg.copy()
-        out[mask == 255] = arr[mask == 255]
-        return out
+    # BGR → BGRA (알파 채널 추가)
+    if arr.shape[2] == 3:
+        arr = cv2.cvtColor(arr, cv2.COLOR_BGR2BGRA)
+
+    # 바깥은 알파 0, 안쪽은 알파 255
+    arr[:, :, 3] = mask
+
+    return arr
+
 
 # ---------- 좌우 비교 합치기 ----------
 def side_by_side(left: np.ndarray | Image.Image,
