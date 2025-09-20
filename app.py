@@ -62,7 +62,7 @@ cv_small = pil_to_cv(pil_small)
 # 3) 보정 적용 -> ndarray(BGR)
 corrected = correct_image(cv_small, ctype=ctype)
 
-# 4) 원형 마스크 -> ndarray(BGR)
+# 4) 원형 마스크(옵션)
 masked_src = apply_circle_mask(cv_small, bg_gray=mask_bg)
 masked_dst = apply_circle_mask(corrected, bg_gray=mask_bg)
 
