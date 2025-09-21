@@ -92,8 +92,13 @@ ctype_norm = normalize_ctype(ctype)
 
 # 4) 보정 실행 (색공간/시그니처 자동 호환)
 def run_correct(img_bgr: np.ndarray, user_ctype: str, alpha_val: float) -> np.ndarray:
-    # 라이브러리마다 쓰는 토큰이 제각각이라 후보를 넓게 시도
-    base = user_ctype.lower()
+    """
+    - 입력: BGR uint8 [0..255]
+    - 내부: RGB float [0..1] 로 변환 후 daltonize.correct_image 호출
+    - 출력: BGR uint8 [0..255]
+    """
+    # 후보 토큰 정규화
+    base = (user_ctype or "").lower()
     family = {
         "protan": ["protan", "protanopia", "p"],
         "deutan": ["deutan", "deuteranopia", "d"],
@@ -102,58 +107,50 @@ def run_correct(img_bgr: np.ndarray, user_ctype: str, alpha_val: float) -> np.nd
     key = "protan" if base.startswith("prot") else \
           "deutan" if base.startswith("deut") else \
           "tritan" if base.startswith("trit") else base
+    tokens = family.get(key, [user_ctype])
 
-    ctype_candidates = family.get(key, [user_ctype])
+    # BGR uint8 -> RGB float
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
 
-    def _try_once(arr_bgr, ctype_token):
-        # 1) BGR 그대로
+    def _try(token):
+        # 일부 구현은 alpha 인자를 지원 안 하므로 두 번 시도
         try:
-            try:
-                out = correct_image(arr_bgr, ctype=ctype_token, alpha=alpha_val)
-            except TypeError:
-                out = correct_image(arr_bgr, ctype=ctype_token)
-            return out
-        except Exception:
-            return None
+            out = correct_image(rgb, ctype=token, alpha=alpha_val)
+        except TypeError:
+            out = correct_image(rgb, ctype=token)
+        return out
 
-    # 후보들을 BGR → (필요시 RGB) 순서로 시도
     best = None
     best_diff = -1.0
-
-    for token in ctype_candidates:
-        # BGR 경로
-        out1 = _try_once(img_bgr, token)
-        if isinstance(out1, np.ndarray) and out1.shape == img_bgr.shape:
-            diff1 = float(np.mean(np.abs(out1.astype(np.int16) - img_bgr.astype(np.int16))))
-            if diff1 > best_diff:
-                best, best_diff = out1, diff1
-
-        # RGB 경로
-        rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    for tk in tokens:
         try:
-            try:
-                out2_rgb = correct_image(rgb, ctype=token, alpha=alpha_val)
-            except TypeError:
-                out2_rgb = correct_image(rgb, ctype=token)
-            if isinstance(out2_rgb, np.ndarray) and out2_rgb.ndim >= 2:
-                out2 = cv2.cvtColor(out2_rgb, cv2.COLOR_RGB2BGR)
-                diff2 = float(np.mean(np.abs(out2.astype(np.int16) - img_bgr.astype(np.int16))))
-                if diff2 > best_diff:
-                    best, best_diff = out2, diff2
-        except Exception:
-            pass
+            out_rgb = _try(tk)
+            if isinstance(out_rgb, np.ndarray):
+                # 결과가 0..1/0..255/float/uint8 등 섞여 있을 수 있으니 정규화
+                o = out_rgb.astype(np.float32)
+                if o.max() > 1.01:   # 0..255 범위로 온 경우
+                    o = o / 255.0
+                o = np.clip(o, 0.0, 1.0)
 
-    # 유효한 결과가 없으면 원본 반환
+                # 다시 BGR uint8로
+                out_bgr = cv2.cvtColor((o * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR)
+
+                # 차이가 큰 쪽을 채택(실제 변화가 있었는지 확인)
+                diff = float(np.mean(np.abs(out_bgr.astype(np.int16) - img_bgr.astype(np.int16))))
+                if diff > best_diff:
+                    best, best_diff = out_bgr, diff
+        except Exception:
+            continue
+
+    # 실패하면 원본 반환
     return best if isinstance(best, np.ndarray) else img_bgr
 
+# 보정 실행 (라이브러리에 alpha 전달)
+corrected = run_correct(cv_small, ctype_norm, alpha)
 
-base = run_correct(cv_small, ctype_norm, alpha)
-
-# 5) 보정 강도 블렌딩(α)
-corrected = (
-    cv_small.astype(np.float32) * (1.0 - alpha) +
-    base.astype(np.float32)      * alpha
-).clip(0, 255).astype("uint8")
+# 디버깅용 차이 값
+diff = float(np.mean(np.abs(corrected.astype(np.int16) - cv_small.astype(np.int16))))
+st.sidebar.write("보정 차이:", round(diff, 3))
 
 # 디버깅용 차이 값(수치가 0에 가깝다면 변화가 거의 없음)
 diff = float(np.mean(np.abs(corrected.astype(np.int16) - cv_small.astype(np.int16))))
