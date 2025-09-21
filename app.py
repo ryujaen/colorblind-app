@@ -1,3 +1,4 @@
+# app.py — TrueColor (inverse-simulation compensation final)
 import streamlit as st
 st.set_page_config(page_title="TrueColor", layout="wide")
 
@@ -7,34 +8,75 @@ from PIL import Image, ImageOps
 
 from image_utils import pil_to_cv, cv_to_pil, safe_resize, side_by_side
 
-# ===== confusion-line 기반 보정 함수 =====
-def daltonize_confusion_line_bgr(img_bgr, kind, alpha=1.0, severity=1.0):
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+# =========================
+# 1) 보정 핵심 유틸 (inverse simulation)
+# =========================
 
-    if kind == "protan":
-        # R 결핍 → G, B로 보정
-        r, g, b = rgb[...,0], rgb[...,1], rgb[...,2]
-        g2 = g + alpha * 0.7 * (r - g)
-        b2 = b + alpha * 0.7 * (r - b)
-        out = np.stack([r, g2, b2], axis=-1)
-    elif kind == "deutan":
-        # G 결핍 → R, B로 보정
-        r, g, b = rgb[...,0], rgb[...,1], rgb[...,2]
-        r2 = r + alpha * 0.7 * (g - r)
-        b2 = b + alpha * 0.7 * (g - b)
-        out = np.stack([r2, g, b2], axis=-1)
-    else:  # tritan
-        # B 결핍 → R, G로 보정
-        r, g, b = rgb[...,0], rgb[...,1], rgb[...,2]
-        r2 = r + alpha * 0.7 * (b - r)
-        g2 = g + alpha * 0.7 * (b - g)
-        out = np.stack([r2, g2, b], axis=-1)
+# Machado 2009 confusion-line projection matrices (linear RGB domain)
+_M_PROJ = {
+    "protan": np.array([[0.0,      2.02344, -2.52581],
+                        [0.0,      1.0,      0.0    ],
+                        [0.0,      0.0,      1.0    ]], dtype=np.float32),
+    "deutan": np.array([[1.0,      0.0,      0.0    ],
+                        [0.494207, 0.0,      1.24827],
+                        [0.0,      0.0,      1.0    ]], dtype=np.float32),
+    "tritan": np.array([[1.0,      0.0,      0.0    ],
+                        [0.0,      1.0,      0.0    ],
+                        [-0.395913,0.801109, 0.0    ]], dtype=np.float32),
+}
 
-    out = np.clip(out, 0.0, 1.0)
-    out_rgb = (out * 255).astype(np.uint8)
+def _srgb_to_linear(x_uint8: np.ndarray) -> np.ndarray:
+    x = x_uint8.astype(np.float32) / 255.0
+    a = 0.055
+    return np.where(x <= 0.04045, x/12.92, ((x + a)/(1+a))**2.4)
+
+def _linear_to_srgb(y: np.ndarray) -> np.ndarray:
+    a = 0.055
+    y = np.clip(y, 0.0, 1.0)
+    return np.where(y <= 0.0031308, y*12.92, (1+a)*(y**(1/2.4)) - a)
+
+def _confusion_matrix(kind: str, severity: float) -> np.ndarray:
+    """S(x) = M(severity) @ x  (linear RGB)"""
+    k = kind.lower()
+    base = _M_PROJ["protan"] if k.startswith("prot") else \
+           _M_PROJ["deutan"] if k.startswith("deut") else \
+           _M_PROJ["tritan"]
+    I = np.eye(3, dtype=np.float32)
+    return (1.0 - float(severity)) * I + float(severity) * base
+
+def compensate_confusion_inverse_bgr(img_bgr: np.ndarray,
+                                     kind: str,
+                                     alpha: float = 1.0,
+                                     severity: float = 1.0) -> np.ndarray:
+    """
+    목표: 색각이상자 시야에서 보정 결과가 원본과 같아지도록 (S(corrected) ≈ original)
+    - 입력/출력: BGR uint8
+    - 내부: RGB linear에서 의사역행렬 보정 후, 원본과 α 블렌딩으로 자연스러움/색역 보호
+    """
+    # BGR → RGB → linear
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    lin = _srgb_to_linear(rgb)
+
+    # confusion simulation matrix & pseudo-inverse
+    M = _confusion_matrix(kind, severity)
+    M_inv = np.linalg.pinv(M).astype(np.float32)
+
+    h, w, _ = lin.shape
+    corr_lin = lin.reshape(-1, 3) @ M_inv.T
+    corr_lin = corr_lin.reshape(h, w, 3)
+    corr_lin = np.clip(corr_lin, 0.0, 1.0)
+
+    # 원본과 α 블렌딩 (과보정/클리핑 완화)
+    corr_lin = (1.0 - alpha) * lin + alpha * corr_lin
+    corr_lin = np.clip(corr_lin, 0.0, 1.0)
+
+    # linear → sRGB → BGR
+    out_rgb = (_linear_to_srgb(corr_lin) * 255.0).astype(np.uint8)
     return cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
 
-# ===== CSS (selectbox 커서 고정) =====
+# =========================
+# 2) CSS (selectbox 커서 고정)
+# =========================
 st.markdown(
     """
     <style>
@@ -46,9 +88,11 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# ===== 사이드바 =====
+# =========================
+# 3) 사이드바
+# =========================
 st.sidebar.title("TrueColor")
-st.sidebar.caption("색각 이상자를 위한 색상 보정 웹앱 (confusion-line)")
+st.sidebar.caption("색각 이상자를 위한 색상 보정 웹앱 (inverse simulation)")
 
 ctype = st.sidebar.selectbox(
     "색각 유형 선택",
@@ -56,11 +100,16 @@ ctype = st.sidebar.selectbox(
     format_func=lambda x: {"protan":"Protanopia","deutan":"Deuteranopia","tritan":"Tritanopia"}[x],
 )
 
-alpha = st.sidebar.slider("보정 강도 (α)", 0.0, 2.0, 1.0, step=0.1)
+alpha = st.sidebar.slider("보정 강도 (α)", 0.0, 2.0, 1.0, step=0.1,
+                          help="0.0은 원본 유지, 1.0 기본 보정, 2.0은 강한 보정")
+severity = st.sidebar.slider("결함 강도 (severity)", 0.0, 1.0, 1.0, 0.05,
+                             help="1.0은 완전 색각결함 가정, 0.5는 약한 결함")
 max_width = st.sidebar.slider("처리 해상도 (긴 변 기준 px)", 480, 1280, 720, step=40)
 st.sidebar.divider()
 
-# ===== 본문 =====
+# =========================
+# 4) 본문
+# =========================
 st.title("TrueColor – 색상 보정 전/후 비교")
 
 col_u1, col_u2 = st.columns(2)
@@ -73,26 +122,36 @@ with col_u1:
 
 with col_u2:
     st.subheader("② 사용 방법")
-    st.markdown("- 이미지를 업로드하고 사이드바에서 유형/강도를 조절하세요.\n- 아래에서 원본/보정 결과를 비교할 수 있습니다.")
+    st.markdown(
+        "- 이미지를 업로드하고 사이드바에서 유형/강도/결함강도를 조절하세요.\n"
+        "- 보정 결과는 **색각이상자 시야에서 원본과 같아지도록** 계산됩니다."
+    )
 
 st.divider()
-
 if uploaded_img is None:
     st.info("좌측에서 이미지를 업로드해 주세요.")
     st.stop()
 
-# ===== 처리 파이프라인 =====
+# =========================
+# 5) 처리 파이프라인
+# =========================
 pil_small = safe_resize(uploaded_img, target_long=max_width)
 cv_src = pil_to_cv(pil_small)
 
-# confusion-line 기반 보정
-cv_dst = daltonize_confusion_line_bgr(cv_src, kind=ctype, alpha=alpha, severity=1.0)
+# 핵심: inverse-simulation compensation
+cv_dst = compensate_confusion_inverse_bgr(cv_src, kind=ctype, alpha=alpha, severity=severity)
 
-# 보정 차이 (한 번만)
-diff = float(np.mean(np.abs(cv_dst.astype(np.int16) - cv_src.astype(np.int16))))
-st.sidebar.write("보정 차이:", round(diff, 3))
+# 보정 품질 지표(한 번만): 색각이상자 시야에서의 오차 || S(corrected) - original ||
+# (linear RGB에서 평가)
+M_eval = _confusion_matrix(ctype, severity)
+orig_lin = _srgb_to_linear(cv2.cvtColor(cv_src, cv2.COLOR_BGR2RGB))
+corr_lin = _srgb_to_linear(cv2.cvtColor(cv_dst, cv2.COLOR_BGR2RGB))
+err = np.mean(np.abs(corr_lin.reshape(-1,3) @ M_eval.T - orig_lin.reshape(-1,3)))
+st.sidebar.write("보정 차이(시야 오차):", round(float(err), 4))
 
-# ===== 출력 =====
+# =========================
+# 6) 출력
+# =========================
 c1, c2 = st.columns([1,1], gap="medium")
 with c1:
     st.subheader("원본")
@@ -104,4 +163,4 @@ with c2:
 st.subheader("전/후 비교 (가로 병치)")
 st.image(cv_to_pil(side_by_side(cv_src, cv_dst, gap=16)), use_column_width=True)
 
-st.caption("Tip: 사이드바에서 해상도와 보정 강도를 조절해 효과를 확인하세요.")
+st.caption("Tip: α(보정 강도)와 severity(결함 강도)를 조절해 자연스러움과 일치도를 맞춰보세요.")
