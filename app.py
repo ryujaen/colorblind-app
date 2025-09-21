@@ -74,6 +74,31 @@ pil_small = safe_resize(uploaded_img, target_long=max_width)
 
 # 2) OpenCV 배열로 변환 -> ndarray(BGR)
 cv_small = pil_to_cv(pil_small)
+
+# ===== 보정 테스트 =====
+rgb = cv2.cvtColor(cv_small, cv2.COLOR_BGR2RGB)
+
+try:
+    base_rgb = correct_image(rgb, ctype=ctype_norm)
+except TypeError:
+    base_rgb = correct_image(rgb, ctype=ctype_norm)
+
+# 결과를 다시 BGR로 변환
+if isinstance(base_rgb, np.ndarray):
+    base = cv2.cvtColor(base_rgb, cv2.COLOR_RGB2BGR)
+else:
+    base = cv_small.copy()
+
+# 보정 강도 반영
+corrected = (
+    cv_small.astype(np.float32) * (1.0 - alpha) +
+    base.astype(np.float32)      * alpha
+).clip(0, 255).astype("uint8")
+
+# 디버깅용 차이 출력
+diff = np.mean(np.abs(corrected.astype(np.int16) - cv_small.astype(np.int16)))
+st.sidebar.write("보정 차이:", diff)
+
 def normalize_ctype(c: str) -> str:
     c = (c or "").lower()
     mapping = {
