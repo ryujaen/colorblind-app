@@ -1,4 +1,4 @@
-# app.py — TrueColor (daltonize.correct_image 안정 래퍼 적용 최종본)
+# app.py — TrueColor (stable daltonize + fallback + cursor fix)
 import streamlit as st
 st.set_page_config(page_title="TrueColor", layout="wide")
 
@@ -9,118 +9,160 @@ from PIL import Image, ImageOps
 from daltonize import correct_image
 from image_utils import pil_to_cv, cv_to_pil, safe_resize, side_by_side
 
-# ===== CSS 커서 스타일 =====
+# ====== CSS: selectbox에서 텍스트 커서 숨기기 / 화살표 유지 ======
 st.markdown(
     """
     <style>
-    div[data-baseweb="select"] { cursor: default !important; }
-    div[data-baseweb="select"] * { cursor: default !important; }
+    /* Streamlit selectbox는 내부에 input을 씁니다. */
+    div[data-baseweb="select"] * { cursor: default !important; user-select: none !important; }
+    /* 입력 캐럿(깜빡이) 숨김 */
+    div[data-baseweb="select"] input { caret-color: transparent !important; }
+    /* 드롭다운 열리는 영역(콤보박스)도 기본 화살표로 */
+    div[data-baseweb="select"] [role="combobox"] { cursor: default !important; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# ===== 사이드바 =====
+# ====== 보정 래퍼 ======
+def _srgb_to_float(rgb_uint8: np.ndarray) -> np.ndarray:
+    return rgb_uint8.astype(np.float32) / 255.0
+
+def _float_to_srgb(x: np.ndarray) -> np.ndarray:
+    return np.clip(x, 0.0, 1.0)
+
+def _fallback_confusion_line(rgb_f: np.ndarray, key: str, alpha: float) -> np.ndarray:
+    """간단 confusion-line 보정(확실히 효과를 보이게 하는 안전판) — RGB float in/out"""
+    r, g, b = rgb_f[...,0], rgb_f[...,1], rgb_f[...,2]
+    if key == "protan":
+        r2, g2, b2 = r, g + 0.6*alpha*(r-g), b + 0.4*alpha*(r-b)
+    elif key == "deutan":
+        r2, g2, b2 = r + 0.6*alpha*(g-r), g, b + 0.4*alpha*(g-b)
+    else:  # tritan
+        r2, g2, b2 = r + 0.5*alpha*(b-r), g + 0.5*alpha*(b-g), b
+    out = np.stack([r2, g2, b2], axis=-1)
+    return _float_to_srgb(out)
+
+def run_color_correction_bgr(img_bgr: np.ndarray, user_ctype: str, alpha: float) -> np.ndarray:
+    """
+    입력: BGR uint8 → 내부: RGB float → daltonize.correct_image 후보 여러 개 시도
+    - 가장 변화 큰 결과 선택
+    - 변화가 미미하면 confusion-line 폴백 적용
+    출력: BGR uint8
+    """
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    rgb_f = _srgb_to_float(rgb)
+
+    base = (user_ctype or "").lower()
+    key = "protan" if base.startswith("prot") else ("deutan" if base.startswith("deut") else "tritan")
+    # 라이브러리마다 토큰이 다를 수 있음 → 후보를 넓게 시도
+    candidates = {
+        "protan":  ["protanopia", "protan", "p"],
+        "deutan":  ["deuteranopia", "deutan", "d"],
+        "tritan":  ["tritanopia", "tritan", "t"],
+    }[key]
+
+    best = None
+    best_diff = -1.0
+    alpha_supported_used = False
+
+    for token in candidates:
+        # 1) alpha 지원 시도
+        out = None
+        alpha_supported = True
+        try:
+            out = correct_image(rgb_f, ctype=token, alpha=alpha)
+        except TypeError:
+            alpha_supported = False
+            try:
+                out = correct_image(rgb_f, ctype=token)
+            except Exception:
+                out = None
+        except Exception:
+            out = None
+
+        if out is None:
+            continue
+
+        o = out.astype(np.float32)
+        if o.max() > 1.01:  # 0..255로 온 케이스
+            o = o / 255.0
+        o = _float_to_srgb(o)
+
+        # 2) alpha 미지원이면 외부에서 블렌딩
+        if not alpha_supported:
+            o = (1.0 - alpha) * rgb_f + alpha * o
+            o = _float_to_srgb(o)
+
+        # 3) 변화량 측정
+        diff = float(np.mean(np.abs(o - rgb_f)))
+        if diff > best_diff:
+            best, best_diff, alpha_supported_used = o, diff, alpha_supported
+
+        # 변화가 충분하면 조기 종료(빠르게 반응)
+        if best_diff > 0.01:
+            break
+
+    # 후보 모두 실패/미미 → 폴백
+    if best is None or best_diff < 1e-4:
+        best = _fallback_confusion_line(rgb_f, key, alpha)
+
+    out_bgr = cv2.cvtColor((best * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    return out_bgr
+
+# ====== 사이드바 ======
 st.sidebar.title("TrueColor")
-st.sidebar.caption("색각 이상자를 위한 색상 보정 웹앱 (daltonize)")
+st.sidebar.caption("색각 이상자를 위한 색상 보정 웹앱 (confusion-line + daltonize 래퍼)")
 
 ctype = st.sidebar.selectbox(
     "색각 유형 선택",
-    options=["protan", "deutan", "tritan"],
-    format_func=lambda x: {"protan": "Protanopia", "deutan": "Deuteranopia", "tritan": "Tritanopia"}[x],
+    options=["Protanopia", "Deuteranopia", "Tritanopia"],
+    index=0,
 )
+# 내부 키로 정규화
+ctype_key = "protan" if ctype.lower().startswith("prot") else ("deutan" if ctype.lower().startswith("deut") else "tritan")
+
+alpha = st.sidebar.slider("보정 강도 (α)", 0.0, 2.0, 1.0, step=0.1)
 max_width = st.sidebar.slider("처리 해상도 (긴 변 기준 px)", 480, 1280, 720, step=40)
-alpha = st.sidebar.slider("보정 강도 (α)", 0.0, 2.0, 1.0, step=0.1,
-                          help="0.0은 원본 유지, 1.0은 기본 보정, 2.0은 보정을 두 배 적용")
 st.sidebar.divider()
 
-# ===== 본문 =====
+# ====== 본문 ======
 st.title("TrueColor – 색상 보정 전/후 비교")
-st.write("**이미지 업로드 → 보정 적용 → 전/후 비교**")
 
 col_u1, col_u2 = st.columns(2)
 uploaded_img = None
 with col_u1:
     st.subheader("① 이미지/사진 입력")
-    img_file = st.file_uploader("이미지 업로드 (JPG/PNG)", type=["jpg", "jpeg", "png"])
-    if img_file:
-        # EXIF 회전 보정 + RGB 고정
-        uploaded_img = ImageOps.exif_transpose(Image.open(img_file)).convert("RGB")
+    up = st.file_uploader("이미지 업로드 (JPG/PNG)", type=["jpg","jpeg","png"])
+    if up:
+        uploaded_img = ImageOps.exif_transpose(Image.open(up)).convert("RGB")
 with col_u2:
     st.subheader("② 사용 방법")
-    st.markdown(
-        "- 좌측에서 이미지를 업로드하세요.\n"
-        "- 색각 유형, 해상도, 보정 강도를 사이드바에서 조정하세요.\n"
-        "- 아래에서 원본/보정 결과를 나란히 비교할 수 있습니다."
-    )
+    st.markdown("- 이미지를 업로드하고 좌측에서 유형/강도를 조절하세요.\n- 아래에서 원본/보정을 비교할 수 있어요.")
 
 st.divider()
 if uploaded_img is None:
     st.info("좌측에서 이미지를 업로드해 주세요.")
     st.stop()
 
-# ===== daltonize.correct_image 안정 래퍼 =====
-def run_daltonize_bgr(img_bgr: np.ndarray, ctype: str, alpha_val: float) -> np.ndarray:
-    """
-    입력: BGR uint8 [0..255]
-    내부: RGB float [0..1] 로 변환 후 correct_image 호출
-    출력: BGR uint8 [0..255]
-    - correct_image가 alpha를 지원하지 않으면 외부 블렌딩으로 강도 반영
-    - correct_image 결과가 0..255/0..1 둘 중 무엇이든 안전 처리
-    """
-    # BGR → RGB(float 0..1)
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-
-    # 1) 라이브러리에 alpha 함께 전달 시도
-    out_rgb = None
-    alpha_supported = True
-    try:
-        out_rgb = correct_image(rgb, ctype=ctype, alpha=alpha_val)
-    except TypeError:
-        alpha_supported = False
-        out_rgb = correct_image(rgb, ctype=ctype)
-
-    # 2) 결과 정규화 (0..1 로)
-    if not isinstance(out_rgb, np.ndarray):
-        # 실패 시 원본 그대로 반환
-        return img_bgr
-
-    o = out_rgb.astype(np.float32)
-    if o.max() > 1.01:  # 0..255로 나온 경우
-        o = o / 255.0
-    o = np.clip(o, 0.0, 1.0)
-
-    # 3) 라이브러리가 alpha 미지원이면 외부 블렌딩으로 강도 반영
-    if not alpha_supported:
-        o = (1.0 - alpha_val) * rgb + alpha_val * o
-        o = np.clip(o, 0.0, 1.0)
-
-    # 4) RGB(float) → BGR(uint8)
-    out_bgr = cv2.cvtColor((o * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR)
-    return out_bgr
-
-# ===== 처리 파이프라인 =====
+# ====== 처리 파이프라인 ======
 pil_small = safe_resize(uploaded_img, target_long=max_width)
-cv_small = pil_to_cv(pil_small)
+cv_src = pil_to_cv(pil_small)  # BGR uint8
 
-corrected = run_daltonize_bgr(cv_small, ctype=ctype, alpha_val=alpha)
+cv_dst = run_color_correction_bgr(cv_src, ctype_key, alpha)
 
 # 보정 차이(한 번만 표시)
-diff = float(np.mean(np.abs(corrected.astype(np.int16) - cv_small.astype(np.int16))))
+diff = float(np.mean(np.abs(cv_dst.astype(np.int16) - cv_src.astype(np.int16))))
 st.sidebar.write("보정 차이:", round(diff, 3))
 
-# ===== 출력 =====
-c1, c2 = st.columns([1, 1], gap="medium")
+# ====== 출력 ======
+c1, c2 = st.columns([1,1], gap="medium")
 with c1:
     st.subheader("원본")
-    st.image(cv_to_pil(cv_small), use_column_width=True)
+    st.image(cv_to_pil(cv_src), use_column_width=True)
 with c2:
     st.subheader("보정 결과")
-    st.image(cv_to_pil(corrected), use_column_width=True)
+    st.image(cv_to_pil(cv_dst), use_column_width=True)
 
-# 전/후 비교
 st.subheader("전/후 비교 (가로 병치)")
-compare_cv = side_by_side(cv_small, corrected, gap=16)
-st.image(cv_to_pil(compare_cv), use_column_width=True)
-
-st.caption("Tip: α(보정 강도)를 0.8~1.2에서 미세 조정해 보세요. 과하면 0.6~1.0으로 낮추면 자연스러워집니다.")
+st.image(cv_to_pil(side_by_side(cv_src, cv_dst, gap=16)), use_column_width=True)
