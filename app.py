@@ -8,6 +8,88 @@ from PIL import Image, ImageOps
 from daltonize import correct_image
 from image_utils import pil_to_cv, cv_to_pil, safe_resize, side_by_side
 
+
+# Machado 2009에서 널리 쓰이는 RGB 투영 행렬(선형 RGB에서 동작)
+_M_PROJ = {
+    "protan": np.array([[0.0, 2.02344, -2.52581],
+                        [0.0, 1.0,      0.0    ],
+                        [0.0, 0.0,      1.0    ]], dtype=np.float32),
+    "deutan": np.array([[1.0,      0.0,     0.0    ],
+                        [0.494207, 0.0,     1.24827],
+                        [0.0,      0.0,     1.0    ]], dtype=np.float32),
+    "tritan": np.array([[1.0,      0.0,     0.0    ],
+                        [0.0,      1.0,     0.0    ],
+                        [-0.395913,0.801109, 0.0   ]], dtype=np.float32),
+}
+
+def _srgb_to_linear(x):
+    x = x.astype(np.float32)
+    x = x / 255.0
+    a = 0.055
+    return np.where(x <= 0.04045, x/12.92, ((x + a)/(1+a))**2.4)
+
+def _linear_to_srgb(y):
+    a = 0.055
+    y = np.clip(y, 0.0, 1.0)
+    return np.where(y <= 0.0031308, y*12.92, (1+a)*(y**(1/2.4)) - a)
+
+def _simulate_confusion_linear(rgb_lin, kind, severity=1.0):
+    """
+    rgb_lin: HxWx3 (linear RGB, 0..1)
+    kind: 'protan'|'deutan'|'tritan'
+    severity: 0..1 (1에 가까울수록 완전 결함 시뮬)
+    """
+    M = np.eye(3, dtype=np.float32)*(1.0 - severity) + _M_PROJ[kind]*(severity)
+    h, w, _ = rgb_lin.shape
+    sim = rgb_lin.reshape(-1, 3) @ M.T
+    sim = sim.reshape(h, w, 3)
+    return np.clip(sim, 0.0, 1.0)
+
+def daltonize_confusion_line_bgr(img_bgr, kind, alpha=1.0, severity=1.0):
+    """
+    1) confusion-line 시뮬레이션
+    2) error = original - simulated
+    3) error를 '보이는 채널'로 재분배하여 보정 (단순/안정 매핑)
+    입력:  BGR uint8, 출력: BGR uint8
+    """
+    # BGR uint8 -> RGB linear
+    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+    rgb_lin = _srgb_to_linear(rgb)
+
+    # 시뮬레이션
+    sim_lin = _simulate_confusion_linear(rgb_lin, kind, severity=severity)
+
+    # 에러
+    err = rgb_lin - sim_lin
+
+    r, g, b = rgb_lin[..., 0], rgb_lin[..., 1], rgb_lin[..., 2]
+    er, eg, eb = err[..., 0], err[..., 1], err[..., 2]
+
+    # 에러 재분배(간단/안정): 결핍 채널의 정보를 다른 두 채널에 가중 유입
+    if kind == "protan":
+        # R 결핍 → G,B로 보정
+        g2 = g + alpha * 0.7 * er
+        b2 = b + alpha * 0.7 * er
+        r2 = r
+    elif kind == "deutan":
+        # G 결핍 → R,B로 보정
+        r2 = r + alpha * 0.7 * eg
+        b2 = b + alpha * 0.7 * eg
+        g2 = g
+    else:  # 'tritan'
+        # B 결핍 → R,G로 보정
+        r2 = r + alpha * 0.7 * eb
+        g2 = g + alpha * 0.7 * eb
+        b2 = b
+
+    out_lin = np.stack([r2, g2, b2], axis=-1)
+    out_lin = np.clip(out_lin, 0.0, 1.0)
+
+    # linear -> sRGB -> BGR
+    out_rgb = (_linear_to_srgb(out_lin) * 255.0).astype(np.uint8)
+    out_bgr = cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
+    return out_bgr
+
 # ===== Streamlit 기본 설정 =====
 st.set_page_config(page_title="TrueColor", layout="wide")
 
@@ -90,75 +172,19 @@ def normalize_ctype(c: str) -> str:
 
 ctype_norm = normalize_ctype(ctype)
 
-# 4) 보정 실행
-def run_correct(img_bgr: np.ndarray, user_ctype: str, alpha_val: float) -> np.ndarray:
-    """
-    입력:  BGR uint8 [0..255]
-    내부:  RGB float [0..1] 로 변환 후 daltonize.correct_image 호출
-    출력:  BGR uint8 [0..255]
-    변화가 없으면 간이 보정 매트릭스로 fallback
-    """
-    base = (user_ctype or "").lower()
-    if   base.startswith("prot"): key = "protan"
-    elif base.startswith("deut"): key = "deutan"
-    elif base.startswith("trit"): key = "tritan"
-    else:                         key = base
 
-    # --- BGR→RGB (float) ---
-    rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+# confusion-line 기반 보정 실행
+kind = "protan" if ctype_norm.startswith("prot") else \
+        "deutan" if ctype_norm.startswith("deut") else \
+        "tritan"
 
-    # --- 라이브러리 호출 (alpha 지원/미지원 모두 시도) ---
-    out_rgb = None
-    try:
-        try:
-            out_rgb = correct_image(rgb, ctype=key, alpha=alpha_val)
-        except TypeError:
-            out_rgb = correct_image(rgb, ctype=key)
-    except Exception:
-        out_rgb = None
+# severity는 결함 시뮬 강도(0~1). 여기선 1.0(완전 결함 가정)로 고정하거나,
+# 추후 사용자 입력으로 노출해도 됨.
+corrected = daltonize_confusion_line_bgr(cv_small, kind=kind, alpha=alpha, severity=1.0)
 
-    use_fallback = True
-    if isinstance(out_rgb, np.ndarray):
-        o = out_rgb.astype(np.float32)
-        if o.max() > 1.01:  # 0..255로 온 경우
-            o = o / 255.0
-        o = np.clip(o, 0.0, 1.0)
-        # 변화량 체크
-        diff = float(np.mean(np.abs(o - rgb)))
-        if diff > 1e-4:
-            use_fallback = False
-            rgb_out = o
-
-    # --- 변화가 거의 없으면 간이 보정 매트릭스 적용 ---
-    if use_fallback:
-        # 간단한 채널 보정(시각적 효과용, alpha 가중 적용)
-        # protan: R 감지 약 → G를 R로 보조 주입
-        # deutan: G 감지 약 → R을 G로 보조 주입
-        # tritan: B 감지 약 → G를 B로 보조 주입
-        r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
-        if key == "protan":
-            r2 = np.clip(r + alpha_val * 0.7 * g, 0.0, 1.0)
-            g2 = g
-            b2 = b
-        elif key == "deutan":
-            r2 = r
-            g2 = np.clip(g + alpha_val * 0.7 * r, 0.0, 1.0)
-            b2 = b
-        elif key == "tritan":
-            r2 = r
-            g2 = g
-            b2 = np.clip(b + alpha_val * 0.7 * g, 0.0, 1.0)
-        else:
-            r2, g2, b2 = r, g, b
-        rgb_out = np.stack([r2, g2, b2], axis=-1)
-
-    # --- RGB(float) → BGR(uint8) ---
-    bgr_out = cv2.cvtColor((rgb_out * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR)
-    return bgr_out
-
-
-# 보정 실행 (alpha는 run_correct 내부에서 처리)
-corrected = run_correct(cv_small, ctype_norm, alpha)
+# 변화량(디버깅)
+diff = float(np.mean(np.abs(corrected.astype(np.int16) - cv_small.astype(np.int16))))
+st.sidebar.write("보정 차이:", round(diff, 3))
 
 # 변화량 표시
 diff = float(np.mean(np.abs(corrected.astype(np.int16) - cv_small.astype(np.int16))))
