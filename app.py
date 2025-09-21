@@ -90,67 +90,80 @@ def normalize_ctype(c: str) -> str:
 
 ctype_norm = normalize_ctype(ctype)
 
-# 4) 보정 실행 (색공간/시그니처 자동 호환)
+# 4) 보정 실행
 def run_correct(img_bgr: np.ndarray, user_ctype: str, alpha_val: float) -> np.ndarray:
     """
-    - 입력: BGR uint8 [0..255]
-    - 내부: RGB float [0..1] 로 변환 후 daltonize.correct_image 호출
-    - 출력: BGR uint8 [0..255]
+    입력:  BGR uint8 [0..255]
+    내부:  RGB float [0..1] 로 변환 후 daltonize.correct_image 호출
+    출력:  BGR uint8 [0..255]
+    변화가 없으면 간이 보정 매트릭스로 fallback
     """
-    # 후보 토큰 정규화
     base = (user_ctype or "").lower()
-    family = {
-        "protan": ["protan", "protanopia", "p"],
-        "deutan": ["deutan", "deuteranopia", "d"],
-        "tritan": ["tritan", "tritanopia", "t"],
-    }
-    key = "protan" if base.startswith("prot") else \
-          "deutan" if base.startswith("deut") else \
-          "tritan" if base.startswith("trit") else base
-    tokens = family.get(key, [user_ctype])
+    if   base.startswith("prot"): key = "protan"
+    elif base.startswith("deut"): key = "deutan"
+    elif base.startswith("trit"): key = "tritan"
+    else:                         key = base
 
-    # BGR uint8 -> RGB float
+    # --- BGR→RGB (float) ---
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
 
-    def _try(token):
-        # 일부 구현은 alpha 인자를 지원 안 하므로 두 번 시도
+    # --- 라이브러리 호출 (alpha 지원/미지원 모두 시도) ---
+    out_rgb = None
+    try:
         try:
-            out = correct_image(rgb, ctype=token, alpha=alpha_val)
+            out_rgb = correct_image(rgb, ctype=key, alpha=alpha_val)
         except TypeError:
-            out = correct_image(rgb, ctype=token)
-        return out
+            out_rgb = correct_image(rgb, ctype=key)
+    except Exception:
+        out_rgb = None
 
-    best = None
-    best_diff = -1.0
-    for tk in tokens:
-        try:
-            out_rgb = _try(tk)
-            if isinstance(out_rgb, np.ndarray):
-                # 결과가 0..1/0..255/float/uint8 등 섞여 있을 수 있으니 정규화
-                o = out_rgb.astype(np.float32)
-                if o.max() > 1.01:   # 0..255 범위로 온 경우
-                    o = o / 255.0
-                o = np.clip(o, 0.0, 1.0)
+    use_fallback = True
+    if isinstance(out_rgb, np.ndarray):
+        o = out_rgb.astype(np.float32)
+        if o.max() > 1.01:  # 0..255로 온 경우
+            o = o / 255.0
+        o = np.clip(o, 0.0, 1.0)
+        # 변화량 체크
+        diff = float(np.mean(np.abs(o - rgb)))
+        if diff > 1e-4:
+            use_fallback = False
+            rgb_out = o
 
-                # 다시 BGR uint8로
-                out_bgr = cv2.cvtColor((o * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    # --- 변화가 거의 없으면 간이 보정 매트릭스 적용 ---
+    if use_fallback:
+        # 간단한 채널 보정(시각적 효과용, alpha 가중 적용)
+        # protan: R 감지 약 → G를 R로 보조 주입
+        # deutan: G 감지 약 → R을 G로 보조 주입
+        # tritan: B 감지 약 → G를 B로 보조 주입
+        r, g, b = rgb[..., 0], rgb[..., 1], rgb[..., 2]
+        if key == "protan":
+            r2 = np.clip(r + alpha_val * 0.7 * g, 0.0, 1.0)
+            g2 = g
+            b2 = b
+        elif key == "deutan":
+            r2 = r
+            g2 = np.clip(g + alpha_val * 0.7 * r, 0.0, 1.0)
+            b2 = b
+        elif key == "tritan":
+            r2 = r
+            g2 = g
+            b2 = np.clip(b + alpha_val * 0.7 * g, 0.0, 1.0)
+        else:
+            r2, g2, b2 = r, g, b
+        rgb_out = np.stack([r2, g2, b2], axis=-1)
 
-                # 차이가 큰 쪽을 채택(실제 변화가 있었는지 확인)
-                diff = float(np.mean(np.abs(out_bgr.astype(np.int16) - img_bgr.astype(np.int16))))
-                if diff > best_diff:
-                    best, best_diff = out_bgr, diff
-        except Exception:
-            continue
+    # --- RGB(float) → BGR(uint8) ---
+    bgr_out = cv2.cvtColor((rgb_out * 255.0).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    return bgr_out
 
-    # 실패하면 원본 반환
-    return best if isinstance(best, np.ndarray) else img_bgr
 
-# 보정 실행 (라이브러리에 alpha 전달)
+# 보정 실행 (alpha는 run_correct 내부에서 처리)
 corrected = run_correct(cv_small, ctype_norm, alpha)
 
-# 디버깅용 차이 값
+# 변화량 표시
 diff = float(np.mean(np.abs(corrected.astype(np.int16) - cv_small.astype(np.int16))))
 st.sidebar.write("보정 차이:", round(diff, 3))
+
 
 # 디버깅용 차이 값(수치가 0에 가깝다면 변화가 거의 없음)
 diff = float(np.mean(np.abs(corrected.astype(np.int16) - cv_small.astype(np.int16))))
