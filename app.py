@@ -91,41 +91,61 @@ def normalize_ctype(c: str) -> str:
 ctype_norm = normalize_ctype(ctype)
 
 # 4) 보정 실행 (색공간/시그니처 자동 호환)
-def run_correct(img_bgr: np.ndarray, ctype_str: str, alpha_val: float) -> np.ndarray:
-    """
-    - 먼저 BGR 그대로 시도
-    - 변화가 없거나 실패하면 RGB로 변환해 시도 후 BGR로 되돌림
-    - 라이브러리 버전에 따라 alpha 미지원이면 자동 호환
-    """
-    # 4-1) BGR 그대로 시도
-    try:
+def run_correct(img_bgr: np.ndarray, user_ctype: str, alpha_val: float) -> np.ndarray:
+    # 라이브러리마다 쓰는 토큰이 제각각이라 후보를 넓게 시도
+    base = user_ctype.lower()
+    family = {
+        "protan": ["protan", "protanopia", "p"],
+        "deutan": ["deutan", "deuteranopia", "d"],
+        "tritan": ["tritan", "tritanopia", "t"],
+    }
+    key = "protan" if base.startswith("prot") else \
+          "deutan" if base.startswith("deut") else \
+          "tritan" if base.startswith("trit") else base
+
+    ctype_candidates = family.get(key, [user_ctype])
+
+    def _try_once(arr_bgr, ctype_token):
+        # 1) BGR 그대로
         try:
-            out1 = correct_image(img_bgr, ctype=ctype_str, alpha=alpha_val)
-        except TypeError:
-            out1 = correct_image(img_bgr, ctype=ctype_str)
-    except Exception:
-        out1 = None
+            try:
+                out = correct_image(arr_bgr, ctype=ctype_token, alpha=alpha_val)
+            except TypeError:
+                out = correct_image(arr_bgr, ctype=ctype_token)
+            return out
+        except Exception:
+            return None
 
-    # out1이 실패했거나, 거의 변화가 없으면 RGB 시도
-    need_rgb_try = (
-        out1 is None or
-        (isinstance(out1, np.ndarray) and out1.shape == img_bgr.shape and
-         np.mean(np.abs(out1.astype(np.int16) - img_bgr.astype(np.int16))) < 0.5)
-    )
+    # 후보들을 BGR → (필요시 RGB) 순서로 시도
+    best = None
+    best_diff = -1.0
 
-    if need_rgb_try:
+    for token in ctype_candidates:
+        # BGR 경로
+        out1 = _try_once(img_bgr, token)
+        if isinstance(out1, np.ndarray) and out1.shape == img_bgr.shape:
+            diff1 = float(np.mean(np.abs(out1.astype(np.int16) - img_bgr.astype(np.int16))))
+            if diff1 > best_diff:
+                best, best_diff = out1, diff1
+
+        # RGB 경로
         rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         try:
             try:
-                out2_rgb = correct_image(rgb, ctype=ctype_str, alpha=alpha_val)
+                out2_rgb = correct_image(rgb, ctype=token, alpha=alpha_val)
             except TypeError:
-                out2_rgb = correct_image(rgb, ctype=ctype_str)
-            if isinstance(out2_rgb, np.ndarray):
-                return cv2.cvtColor(out2_rgb, cv2.COLOR_RGB2BGR)
+                out2_rgb = correct_image(rgb, ctype=token)
+            if isinstance(out2_rgb, np.ndarray) and out2_rgb.ndim >= 2:
+                out2 = cv2.cvtColor(out2_rgb, cv2.COLOR_RGB2BGR)
+                diff2 = float(np.mean(np.abs(out2.astype(np.int16) - img_bgr.astype(np.int16))))
+                if diff2 > best_diff:
+                    best, best_diff = out2, diff2
         except Exception:
             pass
 
-    return out1 if isinstance(out1, np.ndarray) else img_bgr
+    # 유효한 결과가 없으면 원본 반환
+    return best if isinstance(best, np.ndarray) else img_bgr
+
 
 base = run_correct(cv_small, ctype_norm, alpha)
 
