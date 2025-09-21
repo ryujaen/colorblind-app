@@ -1,4 +1,6 @@
 # app.py (정리/보강 최종본)
+import numpy as np
+import cv2
 from io import BytesIO
 import streamlit as st
 st.set_page_config(page_title="TrueColor", layout="wide")
@@ -72,71 +74,61 @@ pil_small = safe_resize(uploaded_img, target_long=max_width)
 
 # 2) OpenCV 배열로 변환 -> ndarray(BGR)
 cv_small = pil_to_cv(pil_small)
+def normalize_ctype(c: str) -> str:
+    c = (c or "").lower()
+    mapping = {
+        "protan": "protanopia", "protanopia": "protanopia",
+        "deutan": "deuteranopia", "deuteranopia": "deuteranopia",
+        "tritan": "tritanopia", "tritanopia": "tritanopia",
+    }
+    return mapping.get(c, c)
 
-# 3) 보정 적용 + alpha 호환 + 블렌딩
-try:
-    base = correct_image(cv_small, ctype=ctype, alpha=alpha)  # 라이브러리가 alpha를 지원하는 경우
-except TypeError:
-    base = correct_image(cv_small, ctype=ctype)               # alpha 미지원 버전일 때 기본 보정
+ctype_norm = normalize_ctype(ctype)
 
-import numpy as np
-# alpha 체감이 되도록 원본과 보정본을 혼합
+def run_correct(img_bgr: np.ndarray, ctype_str: str, alpha_val: float) -> np.ndarray:
+    """
+    correct_image가 어떤 색상공간/시그니처를 기대하는지 모를 때 안전하게 처리:
+    1) BGR 그대로 넣어본 뒤 변화 없으면
+    2) RGB로 변환해 넣고, 결과를 다시 BGR로 복원
+    또한 alpha 인자 미지원이면 자동 호환.
+    """
+    # 1) BGR 그대로 시도
+    try:
+        try:
+            out1 = correct_image(img_bgr, ctype=ctype_str, alpha=alpha_val)
+        except TypeError:
+            out1 = correct_image(img_bgr, ctype=ctype_str)
+    except Exception:
+        out1 = None
+
+    # out1이 실패했거나, 결과가 원본과 사실상 동일하면 RGB 시도
+    need_rgb_try = (
+        out1 is None or
+        (isinstance(out1, np.ndarray) and out1.shape == img_bgr.shape and
+         np.mean(np.abs(out1.astype(np.int16) - img_bgr.astype(np.int16))) < 0.5)
+    )
+
+    if need_rgb_try:
+        rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
+        try:
+            try:
+                out2_rgb = correct_image(rgb, ctype=ctype_str, alpha=alpha_val)
+            except TypeError:
+                out2_rgb = correct_image(rgb, ctype=ctype_str)
+            if isinstance(out2_rgb, np.ndarray) and out2_rgb.ndim >= 2:
+                out2_bgr = cv2.cvtColor(out2_rgb, cv2.COLOR_RGB2BGR)
+                return out2_bgr
+        except Exception:
+            pass
+
+    # 여기까지 왔으면 out1을 신뢰
+    return out1 if isinstance(out1, np.ndarray) else img_bgr
+
+# 실제 적용
+base = run_correct(cv_small, ctype_norm, alpha)
+
+# alpha 블렌딩(강도 체감)
 corrected = (
     cv_small.astype(np.float32) * (1.0 - alpha) +
-    base.astype(np.float32)     * alpha
+    base.astype(np.float32)      * alpha
 ).clip(0, 255).astype("uint8")
-
-masked_src = cv_small
-masked_dst = corrected
-
-# ===== 출력 & 다운로드 =====
-c1, c2 = st.columns([1, 1], gap="medium")
-
-src_pil = cv_to_pil(masked_src)
-dst_pil = cv_to_pil(masked_dst)
-
-with c1:
-    st.subheader("원본")
-    st.image(src_pil, use_column_width=True)
-    buf_src = BytesIO()
-    src_pil.save(buf_src, format="PNG")
-    st.download_button(
-    "🖼️ 원본 이미지 다운로드",
-    data=buf_src.getvalue(),
-    file_name=f"truecolor_original_{max_width}px.png",
-    mime="image/png",
-)
-
-with c2:
-    st.subheader("보정 결과")
-    st.image(dst_pil, use_column_width=True)
-    buf_dst = BytesIO()
-    dst_pil.save(buf_dst, format="PNG")
-    st.download_button(
-    "✅ 보정 이미지 다운로드",
-    data=buf_dst.getvalue(),
-    file_name=f"truecolor_{ctype}_alpha{alpha}_{max_width}px.png",
-    mime="image/png",
-)
-
-# 전/후 비교(병치) 미리보기 + 다운로드
-st.subheader("전/후 비교 (가로 병치)")
-compare_cv = side_by_side(masked_src, masked_dst, gap=16)
-compare_pil = cv_to_pil(compare_cv)
-
-c3, c4 = st.columns([1, 1], gap="medium")
-with c3:
-    st.image(src_pil, use_column_width=True, caption="원본")
-with c4:
-    st.image(dst_pil, use_column_width=True, caption=f"보정 ({ctype}, α={alpha})")
-
-comp_buf = BytesIO()
-compare_pil.save(comp_buf, format="PNG")
-st.download_button(
-    "↔️ 전/후 비교(병치) 다운로드",
-    data=comp_buf.getvalue(),
-    file_name=f"truecolor_compare_{ctype}_alpha{alpha}_{max_width}px.png",
-    mime="image/png",
-)
-
-st.caption("Tip: 사이드바에서 해상도와 보정 강도를 조절해 성능/품질/효과를 맞춰보세요.")
