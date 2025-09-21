@@ -75,6 +75,22 @@ pil_small = safe_resize(uploaded_img, target_long=max_width)
 # 2) OpenCV 배열로 변환 -> ndarray(BGR)
 cv_small = pil_to_cv(pil_small)
 
+# 2) OpenCV 배열로 변환 -> ndarray(BGR)
+cv_small = pil_to_cv(pil_small)
+
+# (추가) ctype 문자열 정규화
+def normalize_ctype(c: str) -> str:
+    c = (c or "").lower()
+    mapping = {
+        "protan": "protanopia", "protanopia": "protanopia",
+        "deutan": "deuteranopia", "deuteranopia": "deuteranopia",
+        "tritan": "tritanopia", "tritanopia": "tritanopia",
+    }
+    return mapping.get(c, c)
+
+ctype_norm = normalize_ctype(ctype)
+
+
 # ===== 보정 테스트 =====
 rgb = cv2.cvtColor(cv_small, cv2.COLOR_BGR2RGB)
 
