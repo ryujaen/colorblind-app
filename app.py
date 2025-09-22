@@ -49,30 +49,34 @@ def compensate_confusion_inverse_bgr(img_bgr: np.ndarray,
                                      alpha: float = 1.0,
                                      severity: float = 1.0) -> np.ndarray:
     """
-    목표: 색각이상자 시야에서 보정 결과가 원본과 같아지도록 (S(corrected) ≈ original)
-    - 입력/출력: BGR uint8
-    - 내부: RGB linear에서 의사역행렬 보정 후, 원본과 α 블렌딩으로 자연스러움/색역 보호
+    S(corrected) ≈ original 을 목표로 하는 안정화된 역보정.
+    - 정규화 의사역행렬:  (M^T M + λI)^(-1) M^T  (λ는 severity에 따라 가변)
+    - alpha는 0..1 범위에서 선형 보간(lerp)
     """
     # BGR → RGB → linear
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     lin = _srgb_to_linear(rgb)
 
-    # confusion simulation matrix & pseudo-inverse
-    M = _confusion_matrix(kind, severity)
-    M_inv = np.linalg.pinv(M).astype(np.float32)
+    # confusion matrix & regularized inverse
+    M = _confusion_matrix(kind, float(severity)).astype(np.float32)
+    I = np.eye(3, dtype=np.float32)
+    # severity가 1.0에 가까울수록 행렬이 불안정 → λ를 약간 키워 안정화
+    lam = 1e-3 + 5e-2 * float(severity)        # 예: 0.001 ~ 0.051
+    Minv_reg = np.linalg.inv(M.T @ M + lam * I) @ M.T
 
     h, w, _ = lin.shape
-    corr_lin = lin.reshape(-1, 3) @ M_inv.T
+    corr_lin = lin.reshape(-1, 3) @ Minv_reg.T
     corr_lin = corr_lin.reshape(h, w, 3)
     corr_lin = np.clip(corr_lin, 0.0, 1.0)
 
-    # 원본과 α 블렌딩 (과보정/클리핑 완화)
-    corr_lin = (1.0 - alpha) * lin + alpha * corr_lin
-    corr_lin = np.clip(corr_lin, 0.0, 1.0)
+    # alpha는 0..1로 클램프하고, 표준 lerp 사용
+    a = float(np.clip(alpha, 0.0, 1.0))
+    out_lin = (1.0 - a) * lin + a * corr_lin
+    out_lin = np.clip(out_lin, 0.0, 1.0)
 
-    # linear → sRGB → BGR
-    out_rgb = (_linear_to_srgb(corr_lin) * 255.0).astype(np.uint8)
+    out_rgb = (_linear_to_srgb(out_lin) * 255.0).astype(np.uint8)
     return cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
+
 
 # =========================
 # 2) CSS (selectbox 커서 고정)
@@ -100,8 +104,10 @@ ctype = st.sidebar.selectbox(
     format_func=lambda x: {"protan":"Protanopia","deutan":"Deuteranopia","tritan":"Tritanopia"}[x],
 )
 
-alpha = st.sidebar.slider("보정 강도 (α)", 0.0, 2.0, 1.0, step=0.1,
-                          help="0.0은 원본 유지, 1.0 기본 보정, 2.0은 강한 보정")
+alpha = st.sidebar.slider(
+    "보정 강도 (α)", 0.0, 1.0, 0.8, step=0.05,
+    help="0.0은 원본 유지, 1.0은 역보정 100% 적용"
+)
 severity = st.sidebar.slider("결함 강도 (severity)", 0.0, 1.0, 1.0, 0.05,
                              help="1.0은 완전 색각결함 가정, 0.5는 약한 결함")
 max_width = st.sidebar.slider("처리 해상도 (긴 변 기준 px)", 480, 1280, 720, step=40)
