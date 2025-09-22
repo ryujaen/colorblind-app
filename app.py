@@ -1,7 +1,8 @@
-# app.py — TrueColor (inverse-simulation compensation final)
+# app.py — TrueColor (inverse-simulation compensation + downloads)
 import streamlit as st
 st.set_page_config(page_title="TrueColor", layout="wide")
 
+from io import BytesIO
 import numpy as np
 import cv2
 from PIL import Image, ImageOps
@@ -60,7 +61,6 @@ def compensate_confusion_inverse_bgr(img_bgr: np.ndarray,
     # confusion matrix & regularized inverse
     M = _confusion_matrix(kind, float(severity)).astype(np.float32)
     I = np.eye(3, dtype=np.float32)
-    # severity가 1.0에 가까울수록 행렬이 불안정 → λ를 약간 키워 안정화
     lam = 1e-3 + 5e-2 * float(severity)        # 예: 0.001 ~ 0.051
     Minv_reg = np.linalg.inv(M.T @ M + lam * I) @ M.T
 
@@ -69,14 +69,13 @@ def compensate_confusion_inverse_bgr(img_bgr: np.ndarray,
     corr_lin = corr_lin.reshape(h, w, 3)
     corr_lin = np.clip(corr_lin, 0.0, 1.0)
 
-    # alpha는 0..1로 클램프하고, 표준 lerp 사용
+    # alpha 0..1 lerp
     a = float(np.clip(alpha, 0.0, 1.0))
     out_lin = (1.0 - a) * lin + a * corr_lin
     out_lin = np.clip(out_lin, 0.0, 1.0)
 
     out_rgb = (_linear_to_srgb(out_lin) * 255.0).astype(np.uint8)
     return cv2.cvtColor(out_rgb, cv2.COLOR_RGB2BGR)
-
 
 # =========================
 # 2) CSS (selectbox 커서 고정)
@@ -156,17 +155,54 @@ err = np.mean(np.abs(corr_lin.reshape(-1,3) @ M_eval.T - orig_lin.reshape(-1,3))
 st.sidebar.write("보정 차이(시야 오차):", round(float(err), 4))
 
 # =========================
-# 6) 출력
+# 6) 출력 + 다운로드
 # =========================
 c1, c2 = st.columns([1,1], gap="medium")
+src_pil = cv_to_pil(cv_src)
+dst_pil = cv_to_pil(cv_dst)
+
 with c1:
     st.subheader("원본")
-    st.image(cv_to_pil(cv_src), use_column_width=True)
+    st.image(src_pil, use_column_width=True)
+    # 다운로드(원본)
+    buf_src = BytesIO()
+    src_pil.save(buf_src, format="PNG")
+    st.download_button(
+        "🖼️ 원본 이미지 다운로드",
+        data=buf_src.getvalue(),
+        file_name=f"truecolor_original_{max_width}px.png",
+        mime="image/png",
+        use_container_width=True,
+    )
+
 with c2:
     st.subheader("보정 결과")
-    st.image(cv_to_pil(cv_dst), use_column_width=True)
+    st.image(dst_pil, use_column_width=True)
+    # 다운로드(보정)
+    buf_dst = BytesIO()
+    dst_pil.save(buf_dst, format="PNG")
+    st.download_button(
+        "✅ 보정 이미지 다운로드",
+        data=buf_dst.getvalue(),
+        file_name=f"truecolor_{ctype}_alpha{alpha}_sev{severity}_{max_width}px.png",
+        mime="image/png",
+        use_container_width=True,
+    )
 
+# 전/후 비교 (가로 병치) + 다운로드
 st.subheader("전/후 비교 (가로 병치)")
-st.image(cv_to_pil(side_by_side(cv_src, cv_dst, gap=16)), use_column_width=True)
+compare_cv = side_by_side(cv_src, cv_dst, gap=16)
+compare_pil = cv_to_pil(compare_cv)
+st.image(compare_pil, use_column_width=True)
+
+comp_buf = BytesIO()
+compare_pil.save(comp_buf, format="PNG")
+st.download_button(
+    "↔️ 전/후 비교(병치) 이미지 다운로드",
+    data=comp_buf.getvalue(),
+    file_name=f"truecolor_compare_{ctype}_alpha{alpha}_sev{severity}_{max_width}px.png",
+    mime="image/png",
+    use_container_width=True,
+)
 
 st.caption("Tip: α(보정 강도)와 severity(결함 강도)를 조절해 자연스러움과 일치도를 맞춰보세요.")
