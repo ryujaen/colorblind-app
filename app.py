@@ -100,7 +100,7 @@ st.sidebar.caption("색각 이상자를 위한 색상 보정 웹앱 (inverse sim
 ctype = st.sidebar.selectbox(
     "색각 유형 선택",
     options=["protan", "deutan", "tritan"],
-    format_func=lambda x: {"protan":"Protanopia","deutan":"Deuteranopia","tritan":"Tritanopia"}[x],
+    format_func=lambda x: {"protan":"Protanopia(적색맹)","deutan":"Deuteranopia(녹색맹)","tritan":"Tritanopia(청색맹)"}[x],
 )
 
 alpha = st.sidebar.slider(
