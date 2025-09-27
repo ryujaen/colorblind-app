@@ -71,11 +71,13 @@ def _mat_lerp(I: np.ndarray, M: np.ndarray, t: float) -> np.ndarray:
 # 2) 시뮬레이션
 # =========================
 def simulate_cvd_bgr(img_bgr: np.ndarray, kind: str, severity: float = 1.0) -> np.ndarray:
+    kind = kind.lower()
     kind = "protan" if kind.startswith("prot") else "deutan" if kind.startswith("deut") else "tritan"
+
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     lin = _srgb_to_linear(rgb)
     lms = _apply_matrix(lin, _RGB2LMS)
-    M = _mat_lerp(np.eye(3, np.float32), _M_SIM_LMS[kind], severity).astype(np.float32)
+    M = _mat_lerp(np.eye(3, dtype=np.float32), _M_SIM_LMS[kind], severity).astype(np.float32)
     lms_sim = _apply_matrix(lms, M)
     lin_sim = _apply_matrix(lms_sim, _LMS2RGB)
     lin_sim = np.clip(lin_sim, 0.0, 1.0)
@@ -97,7 +99,9 @@ _C_COMP = {
                         [0.0, 0.0, 0.0]], dtype=np.float32),
 }
 def daltonize_bgr(img_bgr: np.ndarray, kind: str, alpha: float, severity: float):
+    kind = kind.lower()
     kind = "protan" if kind.startswith("prot") else "deutan" if kind.startswith("deut") else "tritan"
+
     sim_bgr = simulate_cvd_bgr(img_bgr, kind, severity)
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     rgb_sim = cv2.cvtColor(sim_bgr, cv2.COLOR_BGR2RGB)
@@ -117,8 +121,10 @@ def daltonize_bgr(img_bgr: np.ndarray, kind: str, alpha: float, severity: float)
 #           opponent 축 크기에 따라 픽셀별 λ를 조정해 과보정/단일필터화 방지
 # =========================
 def _build_A(kind: str, severity: float) -> np.ndarray:
+    kind = kind.lower()
     kind = "protan" if kind.startswith("prot") else "deutan" if kind.startswith("deut") else "tritan"
-    M = _mat_lerp(np.eye(3, np.float32), _M_SIM_LMS[kind], severity).astype(np.float32)
+
+    M = _mat_lerp(np.eye(3, dtype=np.float32), _M_SIM_LMS[kind], severity).astype(np.float32)
     # 전체 파이프라인을 linear-RGB 도메인의 단일 행렬 A로 근사
     A = _LMS2RGB @ M @ _RGB2LMS
     return A.astype(np.float32)
@@ -147,6 +153,9 @@ def inverse_compensate_bgr_adaptive(img_bgr: np.ndarray, kind: str, alpha: float
       단, λ는 픽셀별로 opponent 강도에 따라 조정 (강한 구분 필요 영역=작은 λ → 더 강한 역보정)
       마지막에 α로 원본과 블렌딩
     """
+    kind = kind.lower()
+    kind = "protan" if kind.startswith("prot") else "deutan" if kind.startswith("deut") else "tritan"
+
     rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     lin = _srgb_to_linear(rgb)           # [0..1]
     A = _build_A(kind, severity)         # 3x3
