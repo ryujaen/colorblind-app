@@ -209,7 +209,7 @@ ctype = st.sidebar.selectbox(
 alpha = st.sidebar.slider("보정 강도 (α)", 0.0, 1.0, 0.8, step=0.05)
 severity = st.sidebar.slider("결함 강도 (severity)", 0.0, 1.0, 1.0, 0.05)
 max_width = st.sidebar.slider("처리 해상도 (긴 변 기준 px)", 480, 1280, 720, step=40)
-st.sidebar.caption("- Daltonization: 일반 시야에서 색 구분을 강화\n- Inverse: 색각 시야에서 원본과 비슷하게 보이도록 역보정")
+st.sidebar.caption("Daltonization: 일반 시야에서 색 구분을 강화\nInverse: 색각 시야에서 원본과 비슷하게 보이도록 역보정")
 
 st.title("TrueColor — 색각 보정 도구")
 
@@ -224,7 +224,7 @@ with col_u1:
 with col_u2:
     st.subheader("② 사용 방법")
     st.markdown(
-        "- **모드**를 선택하고 α/결함강도를 조절하세요.\n"
+        "- 모드를 선택하고 보정 강도와 결함 강도를 조절하세요.\n"
         "- Inverse 모드는 픽셀별로 가변 λ를 사용하여 **색마다 다른 보정**이 적용됩니다."
     )
 
