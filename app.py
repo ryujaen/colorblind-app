@@ -273,7 +273,7 @@ with c2:
     buf_dst = BytesIO(); dst_pil.save(buf_dst, format="PNG")
     st.download_button("✅ 보정 이미지 다운로드", buf_dst.getvalue(),
                        file_name=f"truecolor_{ctype}_{'inv' if mode.startswith('Inverse') else 'dal'}_a{alpha}_s{severity}_{max_width}px.png",
-                       mime="image/png", use_column_width=True)
+                       mime="image/png", use_container_width=True)
 
 st.subheader("참고: 색각 시야 시뮬레이션 (보정 전/후)")
 s1, s2 = st.columns(2)
@@ -291,6 +291,6 @@ st.image(compare_pil, use_column_width=True)
 buf_cmp = BytesIO(); compare_pil.save(buf_cmp, format="PNG")
 st.download_button("↔️ 전/후 비교(병치) 이미지 다운로드", buf_cmp.getvalue(),
                    file_name=f"truecolor_compare_{ctype}_{'inv' if mode.startswith('Inverse') else 'dal'}_{max_width}px.png",
-                   mime="image/png", use_column_width=True)
+                   mime="image/png", use_container_width=True)
 
 st.caption("Tip) Inverse 모드에서 α를 낮추면 자연스러움↑, 올리면 색각 시야 일치도↑. 단색보다 다양한 색이 있는 이미지에서 효과가 분명합니다.")
