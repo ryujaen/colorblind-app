@@ -9,7 +9,7 @@ __pycache__/
 *.tmp
 
 # Streamlit
-.streamlit/
+#.streamlit/
 
 # OS
 .DS_Store
